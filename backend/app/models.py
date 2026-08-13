@@ -163,6 +163,9 @@ class StockPrice(Base):
     __tablename__ = 'stock_price'
     stock_id = Column(Integer, ForeignKey('stock_master.stock_id'), primary_key=True)
     last_price = Column(Float, nullable=False)
+    previous_price = Column(Float, nullable=True)
+    price_change = Column(Float, nullable=True)
+    percentage_change = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class PriceObservation(Base):

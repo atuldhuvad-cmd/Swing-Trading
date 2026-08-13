@@ -68,6 +68,15 @@ The application uses SQLite with SQLAlchemy 2.x and Alembic for migrations.
 
 ## Commands
 
+### Stage 8 rendered browser validation
+
+Run the backend and frontend locally, capture the exact URL printed by Vite, and pass it to the Playwright suite. The suite uses the installed Chrome channel through Playwright's Chromium engine and validates the Phase 1 screens at 320, 375, 390, 768, and 1024 pixels without writing production data.
+
+```powershell
+$env:STAGE8_BASE_URL='http://127.0.0.1:<vite-port>'
+npm --prefix frontend run test:e2e
+```
+
 ### Migrations
 ```bash
 # Upgrade to latest

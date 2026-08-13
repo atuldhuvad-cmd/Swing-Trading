@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, Database, ListPlus, Upload, CheckSquare, Radio } from 'lucide-react';
+import { Home, Database, ListPlus, Upload, CheckSquare, Settings } from 'lucide-react';
 
 export default function Layout() {
   const location = useLocation();
@@ -21,7 +21,7 @@ export default function Layout() {
       </main>
 
       <nav className="fixed bottom-0 w-full bg-white border-t border-gray-200">
-        <div className="max-w-4xl mx-auto flex justify-around p-3">
+        <div className="max-w-4xl mx-auto flex justify-around px-2 py-2">
           <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
             <Home size={22} />
             <span className="text-xs mt-1">Home</span>
@@ -38,10 +38,11 @@ export default function Layout() {
             <CheckSquare size={22} />
             <span className="text-xs mt-1">Review</span>
           </Link>
-          <Link to="/source-readiness" className={`flex flex-col items-center ${isActive('/source-readiness')}`}>
-            <Radio size={22} />
-            <span className="text-xs mt-1">Sources</span>
+          <Link to="/recommendations" className={`flex flex-col items-center ${location.pathname === '/recommendations' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+            <ListPlus size={22} />
+            <span className="text-xs mt-1">List</span>
           </Link>
+          <Link to="/settings" className={`flex flex-col items-center ${isActive('/settings')}`}><Settings size={22}/><span className="text-xs mt-1">Settings</span></Link>
           <Link to="/master" className={`flex flex-col items-center ${isActive('/master')}`}>
             <Database size={22} />
             <span className="text-xs mt-1">Master</span>

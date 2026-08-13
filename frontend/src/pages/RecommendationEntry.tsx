@@ -1,151 +1,21 @@
-import { useState, useEffect } from 'react';
-import { Save, AlertCircle } from 'lucide-react';
-import api from '../api';
+import { useEffect,useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../api';
 
-export default function RecommendationEntry() {
-  const navigate = useNavigate();
-  const [stocks, setStocks] = useState<any[]>([]);
-  const [brokers, setBrokers] = useState<any[]>([]);
-  
-  const [selectedStock, setSelectedStock] = useState<number | null>(null);
-  const [selectedBroker, setSelectedBroker] = useState<number | null>(null);
-  const [rating, setRating] = useState('');
-  const [targetPrice, setTargetPrice] = useState('');
-  const [sourceUrl, setSourceUrl] = useState('');
-  
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    api.get('/stocks').then(res => setStocks(res.data)).catch(console.error);
-    api.get('/brokers').then(res => setBrokers(res.data)).catch(console.error);
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedStock || !selectedBroker || !rating) {
-      setError('Please fill all required fields');
-      return;
-    }
-    
-    setError('');
-    setLoading(true);
-
-    try {
-      // 1 is ID for direct entry source type as per Stage 2
-      const payload = {
-        stock_id: selectedStock,
-        broker_id: selectedBroker,
-        recommendation_date: new Date().toISOString(),
-        original_rating: rating,
-        normalized_rating: rating.toUpperCase().replace(/\s+/g, '_'),
-        target_price: targetPrice ? parseFloat(targetPrice) : null,
-        evidence: [
-          {
-            source_type_id: 1, // PRIMARY_DIRECT
-            verification_status: "VERIFIED_PRIMARY",
-            url: sourceUrl || null
-          }
-        ]
-      };
-
-      await api.post('/recommendations', payload);
-      alert('Recommendation saved successfully!');
-      navigate('/');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to save recommendation');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6 max-w-md mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800">New Recommendation</h2>
-      
-      {error && (
-        <div className="bg-red-50 text-red-700 p-3 rounded-md flex items-start gap-2">
-          <AlertCircle className="shrink-0 mt-0.5" size={18} />
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Stock</label>
-          <select 
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-            value={selectedStock || ''}
-            onChange={e => setSelectedStock(Number(e.target.value))}
-          >
-            <option value="">Select Stock...</option>
-            {stocks.map(s => <option key={s.stock_id} value={s.stock_id}>{s.nse_symbol}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Broker</label>
-          <select 
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-            value={selectedBroker || ''}
-            onChange={e => setSelectedBroker(Number(e.target.value))}
-          >
-            <option value="">Select Broker...</option>
-            {brokers.map(b => <option key={b.broker_id} value={b.broker_id}>{b.display_name}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Rating</label>
-          <select 
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-            value={rating}
-            onChange={e => setRating(e.target.value)}
-          >
-            <option value="">Select Rating...</option>
-            <option value="Strong Buy">Strong Buy</option>
-            <option value="Buy">Buy</option>
-            <option value="Accumulate">Accumulate</option>
-            <option value="Hold">Hold</option>
-            <option value="Reduce">Reduce</option>
-            <option value="Sell">Sell</option>
-            <option value="Strong Sell">Strong Sell</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Target Price (Optional)</label>
-          <input 
-            type="number"
-            step="0.05"
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-            value={targetPrice}
-            onChange={e => setTargetPrice(e.target.value)}
-            placeholder="e.g. 1500.50"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Source URL (Optional)</label>
-          <input 
-            type="url"
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-            value={sourceUrl}
-            onChange={e => setSourceUrl(e.target.value)}
-            placeholder="https://..."
-          />
-        </div>
-
-        <button 
-          type="submit"
-          disabled={loading}
-          className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          <Save size={20} />
-          {loading ? 'Saving...' : 'Save Recommendation'}
-        </button>
-      </form>
-    </div>
-  );
+export default function RecommendationEntry(){
+ const nav=useNavigate(); const [stocks,setStocks]=useState<any[]>([]),[brokers,setBrokers]=useState<any[]>([]),[error,setError]=useState('');
+ const [f,setF]=useState<any>({stock_id:'',broker_id:'',recommendation_date:'',original_rating:'',recommended_price:'',target_price:'',stop_loss:'',time_horizon_text:'',analyst_name:'',publication_name:'',source_url:'',source_date:'',original_text:'',verification_status:'PROVISIONAL'});
+ useEffect(()=>{api.get('/stocks').then(r=>setStocks(r.data)).catch(()=>setError('Unable to load stock master'));api.get('/brokers').then(r=>setBrokers(r.data)).catch(()=>setError('Unable to load broker master'));},[]);
+ function updateField(k: string, v: any) { setF((current: any) => ({ ...current, [k]: v })); }
+ function optionalNumber(v: string) { return v === '' ? null : Number(v); }
+ const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');if(!f.stock_id||!f.broker_id||!f.recommendation_date||!f.original_rating||!f.source_url||!f.original_text){setError('Please fill all required fields');return;}try{await api.post('/recommendations',{stock_id:+f.stock_id,broker_id:+f.broker_id,recommendation_date:f.recommendation_date+'T00:00:00',original_rating:f.original_rating,normalized_rating:f.original_rating.trim().toUpperCase().replace(/\s+/g,'_'),recommended_price:optionalNumber(f.recommended_price),target_price:optionalNumber(f.target_price),stop_loss:optionalNumber(f.stop_loss),time_horizon_text:f.time_horizon_text||null,analyst_name:f.analyst_name||null,currency:'INR',lifecycle_status:'CURRENT',evidence:[{source_type_id:1,publication_name:f.publication_name||null,url:f.source_url,source_date:f.source_date?f.source_date+'T00:00:00':null,original_text:f.original_text,verification_status:f.verification_status}]});nav('/recommendations');}catch(err:any){setError(err.response?.data?.detail||'Unable to save recommendation');}};
+ const input='mt-1 w-full min-h-11 border rounded p-2';
+ return <div className="max-w-xl mx-auto space-y-4"><h1 className="text-2xl font-bold">New Recommendation</h1><p className="text-sm text-gray-600">Enter only explicitly published, traceable broker research. Missing values remain N/A.</p>{error&&<p className="bg-red-50 text-red-700 p-3 rounded break-words">{error}</p>}<form onSubmit={submit} className="bg-white border rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+ <label className="text-sm">Stock<select className={input} value={f.stock_id} onChange={e=>updateField('stock_id',e.target.value)}><option value="">Select</option>{stocks.map(s=><option key={s.stock_id} value={s.stock_id}>{s.nse_symbol}</option>)}</select></label>
+ <label className="text-sm">Broker<select className={input} value={f.broker_id} onChange={e=>updateField('broker_id',e.target.value)}><option value="">Select</option>{brokers.map(b=><option key={b.broker_id} value={b.broker_id}>{b.display_name}</option>)}</select></label>
+ <label className="text-sm">Recommendation date<input type="date" className={input} value={f.recommendation_date} onChange={e=>updateField('recommendation_date',e.target.value)}/></label>
+ <label className="text-sm">Rating<input className={input} value={f.original_rating} onChange={e=>updateField('original_rating',e.target.value)}/></label>
+ {['recommended_price','target_price','stop_loss'].map(k=><label key={k} className="text-sm capitalize">{k.replace('_',' ')}<input type="number" min="0" step="0.01" className={input} value={f[k]} onChange={e=>updateField(k,e.target.value)}/></label>)}
+ <label className="text-sm">Horizon<input className={input} value={f.time_horizon_text} onChange={e=>updateField('time_horizon_text',e.target.value)}/></label><label className="text-sm">Analyst<input className={input} value={f.analyst_name} onChange={e=>updateField('analyst_name',e.target.value)}/></label><label className="text-sm">Publication<input className={input} value={f.publication_name} onChange={e=>updateField('publication_name',e.target.value)}/></label><label className="text-sm">Source date<input type="date" className={input} value={f.source_date} onChange={e=>updateField('source_date',e.target.value)}/></label>
+ <label className="text-sm sm:col-span-2">Source URL<input type="url" className={input} value={f.source_url} onChange={e=>updateField('source_url',e.target.value)}/></label><label className="text-sm">Verification<select className={input} value={f.verification_status} onChange={e=>updateField('verification_status',e.target.value)}><option>PROVISIONAL</option><option>VERIFIED_PRIMARY</option><option>VERIFIED_SECONDARY</option><option>REJECTED</option></select></label><label className="text-sm sm:col-span-2">Original extract<textarea className={`${input} min-h-24`} value={f.original_text} onChange={e=>updateField('original_text',e.target.value)}/></label><button className="sm:col-span-2 min-h-11 bg-blue-600 text-white rounded font-semibold">Save Recommendation</button></form></div>;
 }

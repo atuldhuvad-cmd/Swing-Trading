@@ -50,4 +50,14 @@ export const brokersApi = {
   getBrokers: () => api.get('/brokers').then(res => res.data),
 };
 
+export const recommendationsApi = {
+  getRecommendations: (params?: Record<string, any>) => api.get('/recommendations', { params }).then(res => res.data),
+  getRecommendation: (id: number) => api.get(`/recommendations/${id}`).then(res => res.data),
+};
+
+export const settingsApi = {
+  getSettings: () => api.get('/reference/settings').then(res => res.data),
+  updateSettings: (payload: any) => api.put('/reference/settings', payload).then(res => res.data),
+};
+
 export default api;

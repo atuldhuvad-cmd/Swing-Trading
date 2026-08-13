@@ -8,6 +8,8 @@ import ImportWizard from './pages/ImportWizard';
 import ImportHistory from './pages/ImportHistory';
 import ReviewQueue from './pages/ReviewQueue';
 import SourceReadiness from './pages/SourceReadiness';
+import Settings from './pages/Settings';
+import BrokerRecommendations from './pages/BrokerRecommendations';
 
 function App() {
   return (
@@ -16,11 +18,13 @@ function App() {
         <Route index element={<CandidateDashboard />} />
         <Route path="consensus/:stockId" element={<StockDetailConsensus />} />
         <Route path="recommendations/new" element={<RecommendationEntry />} />
+        <Route path="recommendations" element={<BrokerRecommendations />} />
         <Route path="master" element={<MasterData />} />
         <Route path="imports/new" element={<ImportWizard />} />
         <Route path="imports/history" element={<ImportHistory />} />
         <Route path="review" element={<ReviewQueue />} />
         <Route path="source-readiness" element={<SourceReadiness />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   );

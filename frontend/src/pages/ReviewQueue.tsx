@@ -23,20 +23,20 @@ export default function ReviewQueue() {
       <h1 className="text-2xl font-bold">Review Queue</h1>
       <div className="grid grid-cols-1 gap-4">
         {items.map((item: any) => (
-          <div key={item.review_id} className="border p-4 rounded bg-white shadow-sm space-y-2">
-            <div className="flex justify-between">
+          <div key={item.review_id} className="border p-4 rounded bg-white shadow-sm space-y-2 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
               <h2 className="font-semibold text-lg">{item.reason}</h2>
               <span className="text-sm text-gray-500">{new Date(item.created_at).toLocaleString()}</span>
             </div>
             {item.mapped_data && (
-              <div className="bg-gray-50 p-2 text-sm rounded">
+              <div className="bg-gray-50 p-2 text-sm rounded min-w-0 break-words">
                 <p><strong>Stock:</strong> {item.mapped_data.nse_symbol}</p>
                 <p><strong>Broker:</strong> {item.mapped_data.broker_name}</p>
                 <p><strong>Date:</strong> {item.mapped_data.recommendation_date}</p>
-                <p><strong>Raw Data:</strong> {JSON.stringify(item.raw_data)}</p>
+                <p className="break-all"><strong>Raw Data:</strong> {JSON.stringify(item.raw_data)}</p>
               </div>
             )}
-            <div className="flex gap-2 mt-2">
+            <div className="flex flex-wrap gap-2 mt-2">
               <button onClick={() => handleResolve(item.review_id, 'ACCEPT_AS_NEW')} className="bg-green-600 text-white px-3 py-1 rounded text-sm">
                 Accept As New
               </button>

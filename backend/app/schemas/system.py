@@ -19,6 +19,14 @@ class SystemSettingBase(BaseModel):
 class SystemSettingOut(SystemSettingBase):
     model_config = ConfigDict(from_attributes=True)
 
+class SystemSettingsUpdate(BaseModel):
+    fresh_max_days: int = Field(..., ge=0)
+    recent_max_days: int = Field(..., ge=0)
+    moderate_max_days: int = Field(..., ge=0)
+    stale_max_days: int = Field(..., ge=0)
+    universe_max_age_days: int = Field(..., ge=0)
+    eligible_normalized_ratings: list[str] = Field(..., min_length=1)
+
 class RatingNormalizationBase(BaseModel):
     original_rating: str = Field(..., max_length=100)
     normalized_rating: str = Field(..., max_length=100)

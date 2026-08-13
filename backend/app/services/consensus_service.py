@@ -371,7 +371,7 @@ class ConsensusService:
 
         if max_age_days is None:
             from app.models import SystemSetting
-            s_val = db.query(SystemSetting).filter(SystemSetting.setting_key == 'MODERATE_MAX_DAYS').first()
+            s_val = db.query(SystemSetting).filter(SystemSetting.setting_key == 'UNIVERSE_MAX_AGE_DAYS').first()
             max_age_days = int(s_val.setting_value) if s_val else 30
 
         candidate_summaries: List[CandidateConsensusSummaryOut] = []
