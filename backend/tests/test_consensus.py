@@ -183,6 +183,91 @@ def test_lifecycle_vs_freshness_independence(db_session):
     assert contrib.freshness_category == "AGED"
     assert consensus.metrics.freshness_summary == "AGED"
 
+def test_freshness_boundaries(db_session):
+    stock = StockMaster(nse_symbol="BOUNDARY_TEST", company_name="Boundary Test")
+    broker = BrokerMaster(canonical_name="Boundary Broker", normalized_name="boundary_broker", display_name="Boundary Broker")
+    db_session.add_all([stock, broker])
+    db_session.commit()
+    
+    # We will test calculate_stock_consensus boundaries manually via get_latest_recommendations_per_broker
+    # To test exactly 0, 7, 8, 15, 16, 30, 31, 60, 61
+    now = datetime.utcnow()
+    
+    cases = [
+        (0, "FRESH"),
+        (7, "FRESH"),
+        (8, "RECENT"),
+        (15, "RECENT"),
+        (16, "MODERATE"),
+        (30, "MODERATE"),
+        (31, "STALE"),
+        (60, "STALE"),
+        (61, "AGED")
+    ]
+    
+    # We can mock age_days directly in a test or insert records and check.
+    for days, expected in cases:
+        rec = BrokerRecommendation(
+            stock_id=stock.stock_id,
+            broker_id=broker.broker_id,
+            recommendation_date=now - timedelta(days=days),
+            original_rating="BUY",
+            normalized_rating="BUY",
+            target_price=100.0,
+            lifecycle_status="CURRENT"
+        )
+        db_session.add(rec)
+        db_session.commit()
+        
+        recs = ConsensusService.get_latest_recommendations_per_broker(db_session, stock.stock_id)
+        assert recs[0]['freshness_category'] == expected
+        assert recs[0]['age_days'] == days
+        
+        db_session.delete(rec)
+        db_session.commit()
+
+def test_eligible_bullish_ratings(db_session):
+    stock = StockMaster(nse_symbol="BULL_TEST", company_name="Bull Test")
+    broker = BrokerMaster(canonical_name="Bull Broker", normalized_name="bull_broker", display_name="Bull Broker")
+    db_session.add_all([stock, broker])
+    db_session.commit()
+    
+    cases = ["STRONG_BUY", "BUY", "ACCUMULATE", "ADD", "OUTPERFORM", "POSITIVE"]
+    
+    for rating in cases:
+        rec = BrokerRecommendation(
+            stock_id=stock.stock_id,
+            broker_id=broker.broker_id,
+            recommendation_date=datetime.utcnow(),
+            original_rating=rating,
+            normalized_rating=rating,
+            target_price=200.0,
+            lifecycle_status="CURRENT"
+        )
+        db_session.add(rec)
+        db_session.commit()
+        
+        consensus = ConsensusService.calculate_stock_consensus(db_session, stock.stock_id)
+        assert consensus.metrics.bullish_broker_count == 1
+        
+        db_session.delete(rec)
+        db_session.commit()
+        
+    # Check that HOLD does not enter bullish
+    rec_hold = BrokerRecommendation(
+        stock_id=stock.stock_id,
+        broker_id=broker.broker_id,
+        recommendation_date=datetime.utcnow(),
+        original_rating="HOLD",
+        normalized_rating="HOLD",
+        target_price=200.0,
+        lifecycle_status="CURRENT"
+    )
+    db_session.add(rec_hold)
+    db_session.commit()
+    consensus_hold = ConsensusService.calculate_stock_consensus(db_session, stock.stock_id)
+    assert consensus_hold.metrics.bullish_broker_count == 0
+
 def test_candidate_endpoints(client, db_session):
     stock = StockMaster(nse_symbol="LT_TEST", company_name="Larsen & Toubro Ltd Test")
     broker = BrokerMaster(canonical_name="BOB Capital Test", normalized_name="bob_capital_test", display_name="BOB Capital Test")

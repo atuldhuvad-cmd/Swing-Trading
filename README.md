@@ -10,6 +10,17 @@ Architecture Baseline: Phase 1 Architecture v2.1.1 FINAL FROZEN
 
 Official Working Path: `D:\Swing Trading`
 
+## Stage 5 Implementation
+Implemented the Broker Candidate Dashboard and Consensus Service:
+- Unique broker-count rule ensures multiple sources for the same recommendation do not artificially inflate consensus.
+- Clear separation between lifecycle status (CURRENT/SUPERSEDED) and freshness category. Age alone does not override a CURRENT lifecycle.
+- Five freshness buckets dynamically fetched from system settings (FRESH, RECENT, MODERATE, STALE, AGED).
+- Default candidate universe filters out STALE and AGED recommendations (age <= 30 days) unless explicitly overridden.
+- Comprehensive target statistics including average target, median target, min/max targets, and both average/median upside percentages.
+- Handles CMP gracefully if unavailable.
+- Advanced candidate filters for minimum brokers, upside, bullish percentage, and freshness limits.
+- Stock Detail page displaying granular consensus breakdown, latest broker recommendations, and associated evidence/history.
+
 ## Stage 4 Implementation
 Implemented the CSV/XLSX Import Engine, Deduplication, and Review workflows:
 - Support for `csv` and `xlsx` payload uploads with robust validation, including automatic future-date rejection, target vs current price low/high checks, and rating normalization.

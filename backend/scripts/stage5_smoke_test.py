@@ -141,7 +141,7 @@ def run_stage5_smoke_test():
         # 9. Test Candidate API Universe
         candidates = ConsensusService.get_candidate_universe(db, min_brokers=1)
         print(f"[CHECK 6] Candidate Universe returned {candidates.total} candidates.")
-        assert candidates.total == 2
+        assert candidates.total == 1
 
         print("==================================================")
         print("STAGE 5 SMOKE WORKFLOW SUCCESSFUL — ALL CHECKS PASSED")

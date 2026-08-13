@@ -14,7 +14,7 @@ from app.schemas.consensus import (
     CandidateListResponse
 )
 
-DEFAULT_BULLISH_RATINGS = {'BUY', 'STRONG_BUY', 'ACCUMULATE', 'OUTPERFORM'}
+DEFAULT_BULLISH_RATINGS = {'BUY', 'STRONG_BUY', 'ACCUMULATE', 'ADD', 'OUTPERFORM', 'POSITIVE'}
 
 class ConsensusService:
     @staticmethod
@@ -26,7 +26,8 @@ class ConsensusService:
         db: Session, 
         stock_id: Optional[int] = None,
         lifecycle_status: str = 'CURRENT',
-        verification_status: str = 'ALL'
+        verification_status: str = 'ALL',
+        max_age_days: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Executes a SQLite-compatible ROW_NUMBER() window function query
@@ -60,6 +61,13 @@ class ConsensusService:
 
         results = query.all()
         
+        from app.models import SystemSetting
+        settings = {s.setting_key: int(s.setting_value) for s in db.query(SystemSetting).filter(SystemSetting.setting_key.in_(['FRESH_MAX_DAYS', 'RECENT_MAX_DAYS', 'MODERATE_MAX_DAYS', 'STALE_MAX_DAYS'])).all()}
+        fresh_max = settings.get('FRESH_MAX_DAYS', 7)
+        recent_max = settings.get('RECENT_MAX_DAYS', 15)
+        mod_max = settings.get('MODERATE_MAX_DAYS', 30)
+        stale_max = settings.get('STALE_MAX_DAYS', 60)
+        
         # Process and filter by verification_status if needed
         output = []
         for rec, broker in results:
@@ -84,12 +92,19 @@ class ConsensusService:
             rec_date = rec.recommendation_date
             age_days = max(0, (now - rec_date).days) if rec_date else 0
             
-            if age_days <= 30:
+            if age_days <= fresh_max:
                 freshness_category = 'FRESH'
-            elif age_days <= 60:
+            elif age_days <= recent_max:
+                freshness_category = 'RECENT'
+            elif age_days <= mod_max:
                 freshness_category = 'MODERATE'
+            elif age_days <= stale_max:
+                freshness_category = 'STALE'
             else:
                 freshness_category = 'AGED'
+                
+            if max_age_days is not None and age_days > max_age_days:
+                continue
                 
             overall_ver_status = 'UNVERIFIED'
             if sources:
@@ -131,7 +146,8 @@ class ConsensusService:
         db: Session,
         stock_id: int,
         verification_status: str = 'ALL',
-        eligible_ratings: Optional[List[str]] = None
+        eligible_ratings: Optional[List[str]] = None,
+        max_age_days: Optional[int] = None
     ) -> Optional[StockConsensusOut]:
         stock = db.query(StockMaster).filter(StockMaster.stock_id == stock_id).first()
         if not stock:
@@ -144,10 +160,18 @@ class ConsensusService:
 
         # Fetch latest recommendations per broker
         contributors_raw = ConsensusService.get_latest_recommendations_per_broker(
-            db, stock_id=stock_id, lifecycle_status='CURRENT', verification_status=verification_status
+            db, stock_id=stock_id, lifecycle_status='CURRENT', verification_status=verification_status, max_age_days=max_age_days
         )
 
-        eligible_set = set(r.upper() for r in (eligible_ratings or DEFAULT_BULLISH_RATINGS))
+        from app.models import SystemSetting
+        if eligible_ratings is None:
+            s_val = db.query(SystemSetting).filter(SystemSetting.setting_key == 'ELIGIBLE_BULLISH_RATINGS').first()
+            if s_val:
+                eligible_ratings = [r.strip() for r in s_val.setting_value.split(',')]
+            else:
+                eligible_ratings = list(DEFAULT_BULLISH_RATINGS)
+                
+        eligible_set = set(r.upper() for r in eligible_ratings)
 
         unique_broker_count = len(contributors_raw)
         bullish_count = 0
@@ -317,10 +341,16 @@ class ConsensusService:
 
         stocks = db.query(StockMaster).filter(StockMaster.listing_status == 'ACTIVE').all()
 
+        if max_age_days is None:
+            from app.models import SystemSetting
+            s_val = db.query(SystemSetting).filter(SystemSetting.setting_key == 'MODERATE_MAX_DAYS').first()
+            max_age_days = int(s_val.setting_value) if s_val else 30
+
         candidate_summaries: List[CandidateConsensusSummaryOut] = []
         for s in stocks:
             consensus = ConsensusService.calculate_stock_consensus(
-                db, stock_id=s.stock_id, verification_status=verification_status, eligible_ratings=eligible_ratings
+                db, stock_id=s.stock_id, verification_status=verification_status, 
+                eligible_ratings=eligible_ratings, max_age_days=max_age_days
             )
             if not consensus:
                 continue
@@ -333,10 +363,6 @@ class ConsensusService:
                 
             if min_bullish_pct is not None and m.bullish_percentage < min_bullish_pct:
                 continue
-
-            if max_age_days is not None:
-                if m.avg_age_days is None or m.avg_age_days > max_age_days:
-                    continue
 
             if min_upside is not None:
                 # Compare upside: check if either avg or median upside meets min_upside
