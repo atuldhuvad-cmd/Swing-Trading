@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
-// import Home from './pages/Home';
+import CandidateDashboard from './pages/CandidateDashboard';
+import StockDetailConsensus from './pages/StockDetailConsensus';
 import RecommendationEntry from './pages/RecommendationEntry';
 import MasterData from './pages/MasterData';
 import ImportWizard from './pages/ImportWizard';
@@ -11,7 +12,8 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
-        <Route index element={<div className="p-4 text-center">Dashboard (Stage 4)</div>} />
+        <Route index element={<CandidateDashboard />} />
+        <Route path="consensus/:stockId" element={<StockDetailConsensus />} />
         <Route path="recommendations/new" element={<RecommendationEntry />} />
         <Route path="master" element={<MasterData />} />
         <Route path="imports/new" element={<ImportWizard />} />

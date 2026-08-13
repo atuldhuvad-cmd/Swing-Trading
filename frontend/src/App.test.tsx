@@ -4,13 +4,12 @@ import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 
 describe('App', () => {
-  it('renders dashboard by default', () => {
+  it('renders candidate dashboard by default', () => {
     render(
       <MemoryRouter>
         <App />
       </MemoryRouter>
     );
-    expect(screen.getAllByText(/Dashboard/)).toBeDefined();
+    expect(screen.getByText(/Broker Candidate Universe/)).toBeDefined();
   });
 });
-

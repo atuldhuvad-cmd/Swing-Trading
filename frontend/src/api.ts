@@ -32,4 +32,20 @@ export const reviewApi = {
   resolveItem: (reviewId: number, req: any) => api.post(`/review/${reviewId}/resolve`, req).then(res => res.data),
 };
 
+export const consensusApi = {
+  getCandidates: (params?: Record<string, any>) => 
+    api.get('/consensus/candidates', { params }).then(res => res.data),
+  getStockConsensus: (stockId: number, params?: Record<string, any>) => 
+    api.get(`/consensus/stocks/${stockId}`, { params }).then(res => res.data),
+};
+
+export const stocksApi = {
+  getStocks: (params?: Record<string, any>) => api.get('/stocks', { params }).then(res => res.data),
+  getStock: (id: number) => api.get(`/stocks/${id}`).then(res => res.data),
+};
+
+export const brokersApi = {
+  getBrokers: () => api.get('/brokers').then(res => res.data),
+};
+
 export default api;

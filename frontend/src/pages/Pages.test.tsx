@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import MasterData from './MasterData';
 import RecommendationEntry from './RecommendationEntry';
+import CandidateDashboard from './CandidateDashboard';
 
 afterEach(cleanup);
 
@@ -31,5 +32,11 @@ describe('Frontend Pages', () => {
     // Should show error for required fields
     const error = await screen.findByText('Please fill all required fields');
     expect(error).toBeDefined();
+  });
+
+  it('Candidate Dashboard renders universe header and filters button', async () => {
+    render(<MemoryRouter><CandidateDashboard /></MemoryRouter>);
+    expect(screen.getByText('Broker Candidate Universe')).toBeDefined();
+    expect(screen.getByText(/Filters & Sort/i)).toBeDefined();
   });
 });
