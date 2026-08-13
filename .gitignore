@@ -67,3 +67,6 @@ dist/
 # Database
 *.db
 *.sqlite3
+
+# Manual inputs
+manual_inputs/
