@@ -223,3 +223,40 @@ class SystemSetting(Base):
     setting_key = Column(String(100), primary_key=True)
     setting_value = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+
+class DataImportBatch(Base):
+    __tablename__ = 'data_import_batch'
+    import_batch_id = Column(Integer, primary_key=True, autoincrement=True)
+    import_type = Column(String(50), nullable=False)
+    source_name = Column(String(100), nullable=False)
+    source_reference = Column(String(255), nullable=True)
+    original_filename = Column(String(255), nullable=True)
+    file_sha256 = Column(String(64), nullable=True)
+    retrieval_date = Column(DateTime, nullable=True)
+    trading_date_from = Column(DateTime, nullable=True)
+    trading_date_to = Column(DateTime, nullable=True)
+    rows_received = Column(Integer, default=0)
+    rows_accepted = Column(Integer, default=0)
+    rows_rejected = Column(Integer, default=0)
+    status = Column(String(50), nullable=False, default='PENDING')
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class DailyOhlcv(Base):
+    __tablename__ = 'daily_ohlcv'
+    daily_ohlcv_id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_id = Column(Integer, ForeignKey('stock_master.stock_id'), nullable=False)
+    trading_date = Column(DateTime, nullable=False)
+    series = Column(String(10), nullable=False)
+    open = Column(Float, nullable=False)
+    high = Column(Float, nullable=False)
+    low = Column(Float, nullable=False)
+    close = Column(Float, nullable=False)
+    volume = Column(Integer, nullable=False)
+    source_name = Column(String(100), nullable=False)
+    import_batch_id = Column(Integer, ForeignKey('data_import_batch.import_batch_id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('stock_id', 'trading_date', 'series', name='uq_stock_date_series'),
+    )
