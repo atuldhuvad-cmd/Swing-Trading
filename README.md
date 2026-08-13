@@ -4,6 +4,49 @@
 
 > Mobile-friendly responsive operation is mandatory from Phase 1.
 
-> Phase 1 builds a Broker Recommendation Universe for NSE cash equities. Broker recommendations are evidence/candidate inputs and are NOT Buy/Sell trading signals.
+> Phase 1 builds a Broker Recommendation Universe for NSE cash equities. Broker recommendations are candidate evidence and are NOT Buy/Sell trade signals.
 
 Architecture Baseline: Phase 1 Architecture v2.1.1 FINAL FROZEN
+
+Official Working Path: `D:\Swing Trading`
+
+## Stage 2 Database Model Summary
+The application uses SQLite with SQLAlchemy 2.x and Alembic for migrations.
+17 entities implemented:
+1. `stock_master`
+2. `broker_master`
+3. `broker_alias`
+4. `broker_relationship`
+5. `recommendation_stream`
+6. `broker_recommendation`
+7. `recommendation_status_history`
+8. `recommendation_source`
+9. `source_reference`
+10. `source_type_master`
+11. `rating_normalization`
+12. `stock_price`
+13. `price_observation`
+14. `import_batch`
+15. `import_batch_detail`
+16. `review_queue`
+17. `system_setting`
+
+## Commands
+
+### Migrations
+```bash
+# Upgrade to latest
+alembic upgrade head
+
+# Downgrade completely
+alembic downgrade base
+```
+
+### Tests
+```bash
+# Run pytest (uses isolated temporary db)
+pytest
+```
+
+## Backup Note
+Since this project uses SQLite, to backup the database simply copy `backend/data/swing_trading.db`.
