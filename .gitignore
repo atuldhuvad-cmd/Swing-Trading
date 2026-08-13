@@ -70,3 +70,10 @@ dist/
 
 # Manual inputs
 manual_inputs/
+
+# Playwright test artefacts
+frontend/test-results/
+playwright-report/
+
+# Database backups
+data/backups/
