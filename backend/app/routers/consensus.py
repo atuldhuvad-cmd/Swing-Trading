@@ -56,7 +56,7 @@ def get_stock_consensus(
 @router.get("/source-readiness")
 def get_source_readiness(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     """
-    Stage 6 - Source Collection Readiness Assessment.
+    Stage 7 - Source Collection Readiness Assessment.
 
     Derives readiness from existing broker_master + recommendation_stream tables.
     No new DB tables. Covers the five pilot Indian providers.
@@ -79,7 +79,7 @@ def get_source_readiness(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
         "Mirae Asset Sharekhan",
     ]
 
-    # Source readiness classification per Stage 6 STEP 9
+    # Stage 7 classifications based on direct public-source checks on 2026-08-13.
     READINESS_ASSESSMENTS: Dict[str, Dict[str, str]] = {
         "Angel One": {
             "category": "LOGIN_REQUIRED",
@@ -111,23 +111,22 @@ def get_source_readiness(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
             "collection_method": "DOCUMENT_MANUAL",
         },
         "ICICI Securities": {
-            "category": "LOGIN_REQUIRED",
+            "category": "PUBLIC_STABLE",
             "reasoning": (
-                "ICICIdirect research requires brokerage account authentication. "
-                "The ICICIdirect.com portal restricts full research access to account "
-                "holders. No public unauthenticated research feed is available."
+                "ICICI Direct exposes a public structured equity result-update page and "
+                "official ICICI Securities Retail Equity Research PDFs without login. "
+                "Stage 7 verified five recommendations from these primary sources."
             ),
             "collection_method": "DOCUMENT_MANUAL",
         },
         "Mirae Asset Sharekhan": {
-            "category": "SECONDARY_ONLY",
+            "category": "PUBLIC_UNSTABLE",
             "reasoning": (
-                "Sharekhan/Mirae Asset Sharekhan research is primarily distributed to "
-                "clients. Some recommendations are cited by reputable financial publications "
-                "(Moneycontrol, ET Markets, Livemint) which serve as VERIFIED_SECONDARY "
-                "sources. No direct public primary research endpoint has been identified."
+                "Mirae Asset Sharekhan exposes public official research pages with dated "
+                "recommendations, targets, analysts and report links. Multiple overlapping "
+                "page families and changing structures require manual verification."
             ),
-            "collection_method": "SECONDARY_PUBLICATION",
+            "collection_method": "DOCUMENT_MANUAL",
         },
     }
 

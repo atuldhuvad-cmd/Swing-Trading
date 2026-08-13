@@ -104,8 +104,8 @@ export default function SourceReadiness() {
           <h1 className="text-xl font-bold text-gray-900">Source Collection Readiness</h1>
         </div>
         <p className="text-xs text-gray-500">
-          Stage 6 assessment of data collection readiness for the five pilot Indian broker/research providers.
-          No automated scraping is implemented. All data is ingested manually or via user-provided documents.
+          Stage 7 evidence-based assessment for the five pilot Indian broker/research providers.
+          No automated scraping is implemented. Verified public sources are ingested manually.
         </p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
@@ -119,9 +119,9 @@ export default function SourceReadiness() {
       {/* Disclaimer */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
         <strong>Important:</strong> This application does NOT implement automated web scraping or API key access to brokerage systems.
-        All recommendations are ingested manually from user-provided documents.
+        Recommendations are ingested manually from verified public or user-provided documents.
         No broker API keys are required for Phase 1.
-        Automated web fetching is NOT implemented in Stage 6.
+        Automated web fetching is NOT implemented in Stage 7.
       </div>
 
       {/* Pilot Providers */}
@@ -204,7 +204,7 @@ export default function SourceReadiness() {
                       ) : (
                         <div className="space-y-1.5">
                           {item.streams.map((s) => (
-                            <div key={s.stream_id} className="bg-white p-2 rounded border border-gray-200 text-xs">
+                            <div key={s.stream_id} className="min-w-0 bg-white p-2 rounded border border-gray-200 text-xs">
                               <div className="font-medium text-gray-800">{s.stream_name}</div>
                               <div className="text-gray-500">{s.stream_type} • {s.frequency}</div>
                               {s.source_url && (

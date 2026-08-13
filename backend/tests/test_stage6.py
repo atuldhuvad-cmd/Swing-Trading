@@ -172,7 +172,7 @@ class TestSourceReadinessEndpoint:
         assert angel_one is not None
         assert angel_one["readiness_category"] == "LOGIN_REQUIRED"
 
-    def test_sharekhan_is_secondary_only(self, client: TestClient, db_session):
+    def test_sharekhan_is_public_unstable(self, client: TestClient, db_session):
         """Mirae Asset Sharekhan should be classified as SECONDARY_ONLY."""
         if not db_session.query(BrokerMaster).filter(BrokerMaster.canonical_name == "Mirae Asset Sharekhan").first():
             db_session.add(BrokerMaster(
@@ -186,7 +186,7 @@ class TestSourceReadinessEndpoint:
         data = response.json()
         sharekhan = next((i for i in data if i["canonical_name"] == "Mirae Asset Sharekhan"), None)
         assert sharekhan is not None
-        assert sharekhan["readiness_category"] == "SECONDARY_ONLY"
+        assert sharekhan["readiness_category"] == "PUBLIC_UNSTABLE"
 
 
 # ============================================================

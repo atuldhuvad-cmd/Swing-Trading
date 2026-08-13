@@ -299,8 +299,8 @@ export default function StockDetailConsensus() {
                       ) : (
                         <div className="space-y-1.5">
                           {c.sources.map((src) => (
-                            <div key={src.source_reference_id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200">
-                              <div>
+                            <div key={src.source_reference_id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 min-w-0 bg-white p-2 rounded border border-gray-200">
+                              <div className="min-w-0 break-words">
                                 <span className="font-medium text-gray-800">{src.publication_name || 'Publication'}</span>
                                 {src.source_date && <span className="text-gray-500 ml-2">• Date: {new Date(src.source_date).toLocaleDateString()}</span>}
                                 <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 font-semibold">{src.verification_status}</span>
@@ -310,7 +310,7 @@ export default function StockDetailConsensus() {
                                   href={src.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline flex items-center gap-0.5"
+                                  className="text-blue-600 hover:underline inline-flex items-center gap-0.5 break-all"
                                 >
                                   View Link <ExternalLink className="w-3 h-3" />
                                 </a>

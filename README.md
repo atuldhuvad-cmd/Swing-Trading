@@ -10,6 +10,16 @@ Architecture Baseline: Phase 1 Architecture v2.1.1 FINAL FROZEN
 
 Official Working Path: `D:\Swing Trading`
 
+## Stage 7 Real-Data Pilot
+
+The production database contains five genuine ICICI Direct recommendations verified from official public ICICI Securities Retail Equity Research PDFs. They were entered through the existing stock and recommendation APIs; no scraper, brokerage API, credential, or downloaded report was added to the repository. Only explicitly published fields are stored. Missing stop loss, live CMP, and other financial metadata remain NULL and display as N/A.
+
+Primary evidence is marked `VERIFIED_PRIMARY`; reputable attributed publications may be `VERIFIED_SECONDARY`. Provisional or rejected evidence cannot contribute to the candidate universe. The current ICICI pilot covers CARYSIL, ASTRAMICRO, HINDALCO, GLAND, and NRBBEARING.
+
+To add a real recommendation, verify the company and NSE symbol, add a missing stock through Stock Master, then use Recommendation Entry or the CSV/XLSX import preview and confirmation flow. Attach the official source URL, publication and source date, a traceable extract, and the appropriate verification status. Never infer absent values.
+
+Source investigation found ICICI Direct's structured result-update listing and official PDFs public and stable enough for manual ingestion. HDFC Securities remains login-required; Motilal Oswal is public but structurally unstable; Angel One remains login-required; Mirae Asset Sharekhan now has public official research pages but multiple changing page families require manual verification. Future automation appears most feasible for ICICI Direct at a DAILY check frequency, technically possible but higher-risk for Motilal Oswal and Sharekhan at WEEKLY frequency, inappropriate for HDFC Securities and Angel One without a compliant public source, and remains outside Stage 7.
+
 ## Stage 5 Implementation
 Implemented the Broker Candidate Dashboard and Consensus Service:
 - Unique broker-count rule ensures multiple sources for the same recommendation do not artificially inflate consensus.
