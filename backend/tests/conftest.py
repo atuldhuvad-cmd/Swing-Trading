@@ -26,8 +26,23 @@ def engine(tmp_path_factory):
 
 @pytest.fixture(scope="function")
 def db_session(engine):
+    # Clear tables before each test
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
+    # Add base master data required for tests
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = TestingSessionLocal()
+    
+    from app.models import StockMaster, BrokerMaster, SourceTypeMaster, RatingNormalization
+    db.add(StockMaster(nse_symbol='RELIANCE', company_name='Reliance Ind'))
+    db.add(BrokerMaster(display_name='HDFC Securities', canonical_name='HDFC Securities', normalized_name='HDFC SECURITIES'))
+    db.add(BrokerMaster(display_name='ICICI Direct', canonical_name='ICICI Direct', normalized_name='ICICI DIRECT'))
+    db.add(SourceTypeMaster(type_name='BROKER_RESEARCH'))
+    db.add(RatingNormalization(original_rating='BUY', normalized_rating='BUY'))
+    db.add(RatingNormalization(original_rating='SELL', normalized_rating='SELL'))
+    db.commit()
+    
     try:
         yield db
     finally:

@@ -30,24 +30,24 @@ def test_schema_exists(db_session):
     db_session.query(SystemSetting).first()
 
 def test_stock_master_constraints(db_session):
-    stock1 = StockMaster(nse_symbol='RELIANCE', company_name='Reliance Ind', isin='INE002A01018')
+    stock1 = StockMaster(nse_symbol='TCS', company_name='Tata Consultancy', isin='INE467B01029')
     db_session.add(stock1)
     db_session.commit()
 
     # Duplicate nse_symbol
-    stock2 = StockMaster(nse_symbol='RELIANCE', company_name='Reliance 2')
+    stock2 = StockMaster(nse_symbol='TCS', company_name='TCS 2')
     db_session.add(stock2)
     with pytest.raises(IntegrityError):
         db_session.commit()
     db_session.rollback()
 
     # Nullable ISIN accepted
-    stock3 = StockMaster(nse_symbol='TCS', company_name='TCS', isin=None)
+    stock3 = StockMaster(nse_symbol='WIPRO', company_name='Wipro', isin=None)
     db_session.add(stock3)
     db_session.commit()
 
     # Duplicate non-null ISIN rejected
-    stock4 = StockMaster(nse_symbol='INFY', company_name='Infy', isin='INE002A01018')
+    stock4 = StockMaster(nse_symbol='INFY', company_name='Infy', isin='INE467B01029')
     db_session.add(stock4)
     with pytest.raises(IntegrityError):
         db_session.commit()

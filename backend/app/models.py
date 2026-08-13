@@ -186,6 +186,11 @@ class ImportBatch(Base):
     filename = Column(String(255), nullable=True)
     import_date = Column(DateTime, default=datetime.utcnow)
     status = Column(String(50), nullable=False, default='PENDING')
+    total_rows = Column(Integer, default=0)
+    accepted_rows = Column(Integer, default=0)
+    rejected_rows = Column(Integer, default=0)
+    duplicate_rows = Column(Integer, default=0)
+    review_rows = Column(Integer, default=0)
 
 class ImportBatchDetail(Base):
     __tablename__ = 'import_batch_detail'
@@ -194,6 +199,11 @@ class ImportBatchDetail(Base):
     row_number = Column(Integer, nullable=True)
     status = Column(String(50), nullable=False)
     error_message = Column(Text, nullable=True)
+    raw_data = Column(Text, nullable=True)
+    mapped_data = Column(Text, nullable=True)
+    action = Column(String(50), nullable=True)
+    recommendation_id = Column(Integer, ForeignKey('broker_recommendation.recommendation_id'), nullable=True)
+    source_reference_id = Column(Integer, ForeignKey('source_reference.source_reference_id'), nullable=True)
 
 class ReviewQueue(Base):
     __tablename__ = 'review_queue'
