@@ -1,0 +1,69 @@
+# Stock Investment Lab — .gitignore
+# Ignore only environment/OS/editor noise. All project documentation, source,
+# regression tests, and release archives are intentionally tracked.
+
+node_modules/
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+
+# Optional local Angel One read-only quote helper
+10_Integrations/AngelOneQuotes/angelone_credentials.env
+10_Integrations/AngelOneQuotes/.venv/
+10_Integrations/AngelOneQuotes/.quote_service.pid
+10_Integrations/AngelOneQuotes/*.token
+10_Integrations/AngelOneQuotes/*.log
+10_Integrations/AngelOneQuotes/logs/
+10_Integrations/AngelOneQuotes/tmp/
+10_Integrations/AngelOneQuotes/*response*.json
+
+# Personal browser exports are never release artifacts
+wealth-intelligence-backup-*.json
+paper-delivery-transactions-*.csv
+
+09_Backups/CAS/
+
+# Separate local workspace projects and personal utility scripts
+/Life Vault/
+/scripts/
+
+# Track the Public Market Data Sync subsystem while keeping unrelated personal
+# utilities under scripts/ local-only.
+!/scripts/
+/scripts/*
+!/scripts/fetch_public_prices.py
+!/scripts/generate_pdf_user_guide.py
+!/scripts/validate_market_data.py
+!/scripts/serve_wealth_suite.py
+!/scripts/test_public_sync_system.py
+!/scripts/test_fundamentals_csv.js
+
+# Runtime public-market snapshots are local state; tracked *.example.json files
+# document their shape without dirtying Git after each daily sync.
+/data/public_market_data.json
+/data/public_market_data_previous.json
+/data/public_sync_status.json
+/data/wealth_suite_server.pid
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+.pytest_cache/
+.env
+
+# Node
+node_modules/
+dist/
+
+# Database
+*.db
+*.sqlite3

@@ -1,0 +1,10 @@
+[project]
+name = "swing-trading-backend"
+version = "0.1.0"
+description = "Swing Trading Backend"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+addopts = "-v"
+testpaths = ["tests"]
+pythonpath = ["."]
