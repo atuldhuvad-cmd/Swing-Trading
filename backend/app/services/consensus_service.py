@@ -123,6 +123,7 @@ class ConsensusService:
                 'broker_id': rec.broker_id,
                 'broker_canonical_name': broker.canonical_name,
                 'broker_display_name': broker.display_name,
+                'stream_id': rec.stream_id,
                 'recommendation_date': rec.recommendation_date,
                 'original_rating': rec.original_rating,
                 'normalized_rating': rec.normalized_rating,
@@ -131,6 +132,7 @@ class ConsensusService:
                 'entry_price_high': rec.entry_price_high,
                 'target_price': rec.target_price,
                 'stop_loss': rec.stop_loss,
+                'time_horizon_text': rec.time_horizon_text,
                 'analyst_name': rec.analyst_name,
                 'lifecycle_status': rec.lifecycle_status,
                 'age_days': age_days,
@@ -163,13 +165,32 @@ class ConsensusService:
             db, stock_id=stock_id, lifecycle_status='CURRENT', verification_status=verification_status, max_age_days=max_age_days
         )
 
-        from app.models import SystemSetting
+        from app.models import SystemSetting, RecommendationStream
         if eligible_ratings is None:
             s_val = db.query(SystemSetting).filter(SystemSetting.setting_key == 'ELIGIBLE_BULLISH_RATINGS').first()
             if s_val:
                 eligible_ratings = [r.strip() for r in s_val.setting_value.split(',')]
             else:
                 eligible_ratings = list(DEFAULT_BULLISH_RATINGS)
+
+        # Load freshness thresholds for freshness_summary calculation
+        settings_rows = db.query(SystemSetting).filter(SystemSetting.setting_key.in_(
+            ['FRESH_MAX_DAYS', 'RECENT_MAX_DAYS', 'MODERATE_MAX_DAYS', 'STALE_MAX_DAYS']
+        )).all()
+        settings_map = {s.setting_key: int(s.setting_value) for s in settings_rows}
+        fresh_max = settings_map.get('FRESH_MAX_DAYS', 7)
+        recent_max = settings_map.get('RECENT_MAX_DAYS', 15)
+        mod_max = settings_map.get('MODERATE_MAX_DAYS', 30)
+        stale_max = settings_map.get('STALE_MAX_DAYS', 60)
+
+        # Build stream name lookup
+        stream_names: Dict[int, str] = {}
+        for c in contributors_raw:
+            sid = c.get('stream_id')
+            if sid and sid not in stream_names:
+                stream = db.query(RecommendationStream).filter(RecommendationStream.stream_id == sid).first()
+                if stream:
+                    stream_names[sid] = stream.stream_name
                 
         eligible_set = set(r.upper() for r in eligible_ratings)
 
@@ -215,12 +236,14 @@ class ConsensusService:
                 ) for s in c['sources']
             ]
 
+            stream_name = stream_names.get(c.get('stream_id')) if c.get('stream_id') else None
             contributors_out.append(
                 BrokerContributorOut(
                     recommendation_id=c['recommendation_id'],
                     broker_id=c['broker_id'],
                     broker_canonical_name=c['broker_canonical_name'],
                     broker_display_name=c['broker_display_name'],
+                    stream_name=stream_name,
                     recommendation_date=c['recommendation_date'],
                     original_rating=c['original_rating'],
                     normalized_rating=c['normalized_rating'],
@@ -229,6 +252,7 @@ class ConsensusService:
                     entry_price_high=c['entry_price_high'],
                     target_price=c['target_price'],
                     stop_loss=c['stop_loss'],
+                    time_horizon_text=c.get('time_horizon_text'),
                     analyst_name=c['analyst_name'],
                     lifecycle_status=c['lifecycle_status'],
                     age_days=c['age_days'],
@@ -267,14 +291,18 @@ class ConsensusService:
             if median_target is not None:
                 median_target_upside_pct = round(((median_target - cmp_val) / cmp_val) * 100.0, 2)
 
-        # Age & freshness summary
+        # Age & freshness summary - uses 5-tier system from system settings
         avg_age_days = round(sum(ages) / len(ages), 1) if ages else None
         freshness_summary = 'NONE'
         if avg_age_days is not None:
-            if avg_age_days <= 30:
+            if avg_age_days <= fresh_max:
                 freshness_summary = 'FRESH'
-            elif avg_age_days <= 60:
+            elif avg_age_days <= recent_max:
+                freshness_summary = 'RECENT'
+            elif avg_age_days <= mod_max:
                 freshness_summary = 'MODERATE'
+            elif avg_age_days <= stale_max:
+                freshness_summary = 'STALE'
             else:
                 freshness_summary = 'AGED'
 

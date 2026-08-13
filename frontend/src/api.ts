@@ -37,6 +37,8 @@ export const consensusApi = {
     api.get('/consensus/candidates', { params }).then(res => res.data),
   getStockConsensus: (stockId: number, params?: Record<string, any>) => 
     api.get(`/consensus/stocks/${stockId}`, { params }).then(res => res.data),
+  getSourceReadiness: () =>
+    api.get('/consensus/source-readiness').then(res => res.data),
 };
 
 export const stocksApi = {

@@ -19,6 +19,7 @@ class BrokerContributorOut(BaseModel):
     broker_id: int
     broker_canonical_name: str
     broker_display_name: str
+    stream_name: Optional[str] = None
     recommendation_date: datetime
     original_rating: str
     normalized_rating: str
@@ -27,6 +28,7 @@ class BrokerContributorOut(BaseModel):
     entry_price_high: Optional[float] = None
     target_price: Optional[float] = None
     stop_loss: Optional[float] = None
+    time_horizon_text: Optional[str] = None
     analyst_name: Optional[str] = None
     lifecycle_status: str
     age_days: int

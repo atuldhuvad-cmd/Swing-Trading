@@ -19,6 +19,7 @@ interface Contributor {
   broker_id: number;
   broker_canonical_name: string;
   broker_display_name: string;
+  stream_name?: string;
   recommendation_date: string;
   original_rating: string;
   normalized_rating: string;
@@ -27,6 +28,7 @@ interface Contributor {
   entry_price_high?: number;
   target_price?: number;
   stop_loss?: number;
+  time_horizon_text?: string;
   analyst_name?: string;
   lifecycle_status: string;
   age_days: number;
@@ -231,17 +233,39 @@ export default function StockDetailConsensus() {
                 <div key={c.recommendation_id} className="border border-gray-200 rounded-lg p-3 hover:border-gray-300 transition-colors">
                   <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-gray-900">{c.broker_display_name}</span>
                         <span className="text-xs px-2 py-0.5 rounded font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                           {c.normalized_rating}
                         </span>
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${c.freshness_category === 'FRESH' ? 'bg-green-100 text-green-800' : c.freshness_category === 'MODERATE' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700'}`}>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          c.freshness_category === 'FRESH' ? 'bg-green-100 text-green-800' :
+                          c.freshness_category === 'RECENT' ? 'bg-teal-100 text-teal-800' :
+                          c.freshness_category === 'MODERATE' ? 'bg-yellow-100 text-yellow-800' :
+                          c.freshness_category === 'STALE' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-700'}`}>
                           {c.freshness_category} ({c.age_days}d)
                         </span>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          c.verification_status === 'VERIFIED_PRIMARY' ? 'bg-green-50 text-green-700 border border-green-200' :
+                          c.verification_status === 'VERIFIED_SECONDARY' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                          c.verification_status === 'PROVISIONAL' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
+                          'bg-gray-50 text-gray-500 border border-gray-200'}`}>
+                          {c.verification_status.replace('_', ' ')}
+                        </span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Analyst: {c.analyst_name || 'N/A'} • Date: {new Date(c.recommendation_date).toLocaleDateString()}
+                      <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                        <div>
+                          Original: <span className="font-medium text-gray-700">{c.original_rating}</span>
+                          {' • '}Analyst: {c.analyst_name || 'N/A'}
+                          {' • '}Date: {new Date(c.recommendation_date).toLocaleDateString()}
+                        </div>
+                        {c.stream_name && (
+                          <div>Stream: <span className="font-medium text-gray-700">{c.stream_name}</span></div>
+                        )}
+                        {c.time_horizon_text && (
+                          <div>Horizon: <span className="font-medium text-gray-700">{c.time_horizon_text}</span></div>
+                        )}
                       </div>
                     </div>
 

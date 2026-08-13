@@ -7,6 +7,7 @@ import MasterData from './pages/MasterData';
 import ImportWizard from './pages/ImportWizard';
 import ImportHistory from './pages/ImportHistory';
 import ReviewQueue from './pages/ReviewQueue';
+import SourceReadiness from './pages/SourceReadiness';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
         <Route path="imports/new" element={<ImportWizard />} />
         <Route path="imports/history" element={<ImportHistory />} />
         <Route path="review" element={<ReviewQueue />} />
+        <Route path="source-readiness" element={<SourceReadiness />} />
       </Route>
     </Routes>
   );
