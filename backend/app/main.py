@@ -3,7 +3,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from .database import get_db
 
+from .routers import stocks, brokers, recommendations, reference
+
 app = FastAPI(title="Swing Trading Platform API")
+
+app.include_router(stocks.router)
+app.include_router(brokers.router)
+app.include_router(recommendations.router)
+app.include_router(reference.router)
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
