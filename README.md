@@ -10,6 +10,13 @@ Architecture Baseline: Phase 1 Architecture v2.1.1 FINAL FROZEN
 
 Official Working Path: `D:\Swing Trading`
 
+## Stage 4 Implementation
+Implemented the CSV/XLSX Import Engine, Deduplication, and Review workflows:
+- Support for `csv` and `xlsx` payload uploads with robust validation, including automatic future-date rejection, target vs current price low/high checks, and rating normalization.
+- Mapping capabilities dynamic against DB state, gracefully assigning statuses (`UNIQUE`, `PROBABLE_DUPLICATE`, `ATTACH_SOURCE`, `REVIEW_REQUIRED`, etc.).
+- Defensive confirmation flows ensuring safe commit to production database without creating orphaned records.
+- Comprehensive test coverage for import engine deduplication edge cases.
+
 ## Stage 3 Implementation
 Implemented the API backend and mobile-first frontend interface for Recommendation Entry and Master Data:
 - `backend/app/routers/` exposes APIs for Stocks, Brokers, Recommendations, and Reference data.

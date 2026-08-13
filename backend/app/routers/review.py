@@ -61,59 +61,16 @@ def resolve_review_item(review_id: int, req: ReviewResolveRequest, db: Session =
             # Re-execute as UNIQUE
             detail.action = 'UNIQUE'
             detail.status = 'PREVIEW'
-            # Note: We should ideally immediately confirm it if the batch is completed,
-            # or leave it in PREVIEW if the batch is in PREVIEW.
-            # Assuming batch is COMPLETED, we process it now.
+            
             batch = db.query(ImportBatch).filter(ImportBatch.batch_id == detail.batch_id).first()
-            if batch and batch.status == 'COMPLETED':
+            if batch and batch.status in ('COMPLETED', 'PREVIEW'):
                 mapped = json.loads(detail.mapped_data)
-                
-                # Check for resolved broker
                 if req.resolved_broker_id:
                     mapped['broker_id'] = req.resolved_broker_id
                     detail.mapped_data = json.dumps(mapped)
                     
-                ImportService.confirm_batch(db, detail.batch_id) # confirm_batch handles only PREVIEW items and sets to COMPLETED
-                # But wait, confirm_batch processes ALL PREVIEW items. That's fine.
-                
-                # Wait, confirm batch loops over all PREVIEW.
-                # Actually, better to just process this single row here for safety.
-                from datetime import datetime
-                
-                src = SourceReference(
-                    source_type_id=1,
-                    publication_name=mapped.get('source_name'),
-                    url=mapped.get('source_url'),
-                    verification_status=mapped.get('verification_status', 'PROVISIONAL'),
-                    import_batch_id=item.import_batch_id
-                )
-                db.add(src)
-                db.flush()
-                
-                rec = BrokerRecommendation(
-                    stock_id=mapped['stock_id'],
-                    broker_id=mapped['broker_id'],
-                    recommendation_date=datetime.fromisoformat(mapped['recommendation_date']),
-                    original_rating=mapped['original_rating'],
-                    normalized_rating=mapped['normalized_rating'],
-                    target_price=mapped.get('target_price'),
-                    recommended_price=mapped.get('recommended_price'),
-                    entry_price_low=mapped.get('entry_price_low'),
-                    entry_price_high=mapped.get('entry_price_high'),
-                    stop_loss=mapped.get('stop_loss'),
-                    lifecycle_status='CURRENT',
-                    import_batch_id=item.import_batch_id
-                )
-                rec.fingerprint = ImportService.fingerprint(mapped)
-                db.add(rec)
-                db.flush()
-                db.add(RecommendationSource(recommendation_id=rec.recommendation_id, source_reference_id=src.source_reference_id))
-                
-                detail.status = 'COMPLETED'
-                detail.recommendation_id = rec.recommendation_id
-                detail.source_reference_id = src.source_reference_id
+                ImportService.confirm_batch(db, detail.batch_id) 
                 batch.review_rows = max(0, batch.review_rows - 1)
-                batch.accepted_rows += 1
                 
         item.status = 'RESOLVED_ACCEPTED'
 

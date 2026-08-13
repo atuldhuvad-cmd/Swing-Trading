@@ -277,7 +277,7 @@ class ImportService:
         batch = db.query(ImportBatch).filter(ImportBatch.batch_id == batch_id).first()
         if not batch:
             raise ValueError(f'Invalid batch: None for id {batch_id}')
-        if batch.status != 'PREVIEW':
+        if batch.status not in ('PREVIEW', 'COMPLETED'):
             raise ValueError(f'Invalid status: {batch.status} for id {batch_id}')
             
         details = db.query(ImportBatchDetail).filter(ImportBatchDetail.batch_id == batch_id).all()
@@ -403,12 +403,22 @@ class ImportService:
             if links == 0:
                 sources_to_delete.append(sid)
                 
-        # 4. Delete orphaned sources
+        # 4. Nullify foreign keys in ImportBatchDetail for this batch to prevent FK constraint failures on deletion
+        if sources_to_delete or batch_rec_ids:
+            db.execute(ImportBatchDetail.__table__.update().where(
+                ImportBatchDetail.batch_id == batch_id
+            ).values(recommendation_id=None, source_reference_id=None))
+            
+        # 5. Delete orphaned sources
         if sources_to_delete:
             db.query(SourceReference).filter(SourceReference.source_reference_id.in_(sources_to_delete)).delete(synchronize_session=False)
             
-        # 5. Delete batch-created recommendations
+        # 6. Delete batch-created recommendations
         if batch_rec_ids:
+            # First delete dependent status history
+            db.execute(__import__('app.models').models.RecommendationStatusHistory.__table__.delete().where(
+                __import__('app.models').models.RecommendationStatusHistory.recommendation_id.in_(batch_rec_ids)
+            ))
             db.query(BrokerRecommendation).filter(BrokerRecommendation.recommendation_id.in_(batch_rec_ids)).delete(synchronize_session=False)
             
         # 6. Delete review queue items
