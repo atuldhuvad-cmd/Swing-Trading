@@ -346,3 +346,20 @@ class CandidateCriterionResult(Base):
     __table_args__ = (
         CheckConstraint(state.in_(['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE']), name='check_criterion_state'),
     )
+
+
+class RiskRewardResult(Base):
+    __tablename__ = 'risk_reward_result'
+    result_id = Column(Integer, primary_key=True, autoincrement=True)
+    evaluation_id = Column(Integer, ForeignKey('candidate_evaluation_run.evaluation_id'), nullable=False)
+    support = Column(Numeric(precision=20, scale=4), nullable=True)
+    resistance = Column(Numeric(precision=20, scale=4), nullable=True)
+    entry_reference = Column(Numeric(precision=20, scale=4), nullable=True)
+    stop_loss = Column(Numeric(precision=20, scale=4), nullable=True)
+    target = Column(Numeric(precision=20, scale=4), nullable=True)
+    risk_per_share = Column(Numeric(precision=20, scale=4), nullable=True)
+    reward_per_share = Column(Numeric(precision=20, scale=4), nullable=True)
+    risk_reward_ratio = Column(Numeric(precision=20, scale=4), nullable=True)
+    config_fingerprint = Column(String(64), nullable=False)
+    config_snapshot = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
