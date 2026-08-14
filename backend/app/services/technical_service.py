@@ -25,7 +25,7 @@ class TechnicalService:
         df['volume'] = df['volume'].astype(float)
 
         result = {
-            'symbol': adjusted_ohlcv[0]['original'].stock.nse_symbol if hasattr(adjusted_ohlcv[0]['original'], 'stock') else 'UNKNOWN',
+            'symbol': adjusted_ohlcv[0].get('original').stock.nse_symbol if adjusted_ohlcv[0].get('original') and hasattr(adjusted_ohlcv[0].get('original'), 'stock') else 'UNKNOWN',
             'sessions': len(df),
             'latest_trading_date': df['trading_date'].iloc[-1],
             'latest_close': Decimal(str(round(df['close'].iloc[-1], 2))),

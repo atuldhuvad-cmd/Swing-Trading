@@ -31,23 +31,23 @@ class RiskRewardService:
         support = technical_evidence.get('support', current_price * 0.9) # Simple fallback if not provided
         resistance = technical_evidence.get('resistance', current_price * 1.1)
         
-        atr_multiplier = config.get('atr_multiplier', 1.5)
-        buffer = config.get('buffer_percent', 0.01)
+        atr_multiplier = Decimal(str(config.get('atr_multiplier', 1.5)))
+        buffer = Decimal(str(config.get('buffer_percent', 0.01)))
         
         stop_loss = None
         target = None
         risk = None
         reward = None
         rr_ratio = None
-        entry = current_price
+        entry = Decimal(str(current_price))
         
         if atr is not None and not (isinstance(atr, float) and (atr != atr or abs(atr) == float('inf'))):
-            stop_loss = entry - (atr * atr_multiplier)
+            stop_loss = entry - (Decimal(str(atr)) * atr_multiplier)
         elif support is not None and support > 0:
-            stop_loss = support * (1 - buffer)
+            stop_loss = Decimal(str(support)) * (Decimal('1.0') - buffer)
             
-        if resistance is not None and resistance > entry:
-            target = resistance * (1 - buffer)
+        if resistance is not None and resistance > current_price:
+            target = Decimal(str(resistance)) * (Decimal('1.0') - buffer)
             
         if stop_loss is not None and stop_loss > 0 and stop_loss < entry:
             risk = entry - stop_loss
