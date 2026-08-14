@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from ..models import FundamentalSnapshot, FundamentalMetric, StockMaster
+from decimal import Decimal
 
 class FundamentalService:
     STALENESS_THRESHOLD_DAYS = 90
@@ -17,12 +18,16 @@ class FundamentalService:
         period_type: str, 
         entity_type: str = 'ORDINARY',
         metrics: Dict[str, Dict[str, Any]] = None,
-        source_reference_id: int = None
+        source_reference_id: int = None,
+        reference_date: date = None
     ) -> FundamentalSnapshot:
         if metrics is None:
             metrics = {}
             
-        # check if a previous snapshot exists for the same financial period
+        if entity_type not in ['ORDINARY', 'BANK', 'NBFC']:
+            raise ValueError(f"Invalid entity_type: {entity_type}")
+            
+        # check if a previous snapshot exists for the SAME stock, financial period, and period type
         prev = db.query(FundamentalSnapshot).filter(
             FundamentalSnapshot.stock_id == stock_id,
             FundamentalSnapshot.financial_period == financial_period,
@@ -53,14 +58,24 @@ class FundamentalService:
             prev.superseded_by_id = snapshot.snapshot_id
             
         metric_objs = []
+        ref_date = reference_date or datetime.utcnow().date()
+        
         for m_name, m_data in metrics.items():
             status = m_data.get('status', 'UNKNOWN')
             val = m_data.get('value', None)
             
-            # Check staleness based on as_of_date vs captured_at, or if data itself is old.
-            # But the requirement says "determine staleness deterministically from configured rules"
-            if status == 'KNOWN' and (datetime.utcnow().date() - as_of_date).days > cls.STALENESS_THRESHOLD_DAYS:
+            if status not in ['KNOWN', 'UNKNOWN', 'NOT_APPLICABLE', 'STALE', 'UNSUPPORTED']:
+                raise ValueError(f"Invalid status: {status}")
+                
+            if status in ['UNKNOWN', 'NOT_APPLICABLE', 'UNSUPPORTED', 'STALE']:
+                val = None
+                
+            if status == 'KNOWN' and (ref_date - as_of_date).days > cls.STALENESS_THRESHOLD_DAYS:
                 status = 'STALE'
+                val = None
+                
+            if val is not None:
+                val = Decimal(str(val))
                 
             metric_objs.append(FundamentalMetric(
                 snapshot_id=snapshot.snapshot_id,

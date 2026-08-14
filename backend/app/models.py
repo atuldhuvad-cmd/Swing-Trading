@@ -296,13 +296,17 @@ class FundamentalSnapshot(Base):
     is_superseded = Column(Boolean, default=False, nullable=False)
     superseded_by_id = Column(Integer, ForeignKey('fundamental_snapshot.snapshot_id'), nullable=True)
     entity_type = Column(String(50), nullable=False, default='ORDINARY')
+    
+    __table_args__ = (
+        CheckConstraint(entity_type.in_(['ORDINARY', 'BANK', 'NBFC']), name='check_entity_type'),
+    )
 
 class FundamentalMetric(Base):
     __tablename__ = 'fundamental_metric'
     metric_id = Column(Integer, primary_key=True, autoincrement=True)
     snapshot_id = Column(Integer, ForeignKey('fundamental_snapshot.snapshot_id'), nullable=False)
     metric_name = Column(String(100), nullable=False)
-    metric_value = Column(Float, nullable=True)
+    metric_value = Column(Numeric(precision=20, scale=4), nullable=True)
     status = Column(String(50), nullable=False)
     
     __table_args__ = (
