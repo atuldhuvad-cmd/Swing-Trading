@@ -313,3 +313,36 @@ class FundamentalMetric(Base):
         CheckConstraint(status.in_(['KNOWN', 'UNKNOWN', 'NOT_APPLICABLE', 'STALE', 'UNSUPPORTED']), name='check_fundamental_status'),
         UniqueConstraint('snapshot_id', 'metric_name', name='uq_snapshot_metric'),
     )
+
+
+class CandidateEvaluationRun(Base):
+    __tablename__ = 'candidate_evaluation_run'
+    evaluation_id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_id = Column(Integer, ForeignKey('stock_master.stock_id'), nullable=False)
+    evaluation_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    technical_snapshot_reference = Column(String(255), nullable=True)
+    fundamental_snapshot_id = Column(Integer, ForeignKey('fundamental_snapshot.snapshot_id'), nullable=True)
+    classification = Column(String(50), nullable=False)
+    config_fingerprint = Column(String(64), nullable=False)
+    config_snapshot = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    __table_args__ = (
+        CheckConstraint(classification.in_(['FINAL_CANDIDATE', 'WATCH', 'REJECTED', 'INSUFFICIENT_DATA', 'RULE_CONFIGURATION_REQUIRED']), name='check_candidate_classification'),
+    )
+
+class CandidateCriterionResult(Base):
+    __tablename__ = 'candidate_criterion_result'
+    result_id = Column(Integer, primary_key=True, autoincrement=True)
+    evaluation_id = Column(Integer, ForeignKey('candidate_evaluation_run.evaluation_id'), nullable=False)
+    criterion_identifier = Column(String(100), nullable=False)
+    observed_value = Column(Numeric(precision=20, scale=4), nullable=True)
+    operator = Column(String(50), nullable=True)
+    threshold = Column(Numeric(precision=20, scale=4), nullable=True)
+    state = Column(String(50), nullable=False)
+    reason = Column(Text, nullable=True)
+    evidence_reference = Column(String(255), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(state.in_(['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE']), name='check_criterion_state'),
+    )
