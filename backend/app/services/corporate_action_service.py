@@ -43,9 +43,10 @@ class CorporateActionService:
         return query.order_by(CorporateAction.ex_date.desc()).all()
 
     @staticmethod
-    def get_adjustment_factors(actions: List[CorporateAction], target_date: date) -> Dict[str, Decimal]:
+    def get_adjustment_factors(actions: List[CorporateAction], target_date: date) -> Dict[str, Any]:
         price_factor = Decimal('1.0')
         volume_factor = Decimal('1.0')
+        status = "NO_ADJUSTMENT"
         
         for act in sorted(actions, key=lambda x: x.ex_date, reverse=True):
             if act.ex_date <= target_date:
@@ -54,14 +55,18 @@ class CorporateActionService:
             if act.action_type == 'SPLIT':
                 price_factor *= (act.ratio_denominator / act.ratio_numerator)
                 volume_factor *= (act.ratio_numerator / act.ratio_denominator)
+                status = "ADJUSTED" if status != "UNSUPPORTED/UNKNOWN" else status
             elif act.action_type == 'BONUS':
                 existing = act.ratio_denominator
                 bonus = act.ratio_numerator
                 total = existing + bonus
                 price_factor *= (existing / total)
                 volume_factor *= (total / existing)
+                status = "ADJUSTED" if status != "UNSUPPORTED/UNKNOWN" else status
+            elif act.action_type == 'RIGHTS':
+                status = "UNSUPPORTED/UNKNOWN"
                 
-        return {'price_factor': price_factor, 'volume_factor': volume_factor}
+        return {'price_factor': price_factor, 'volume_factor': volume_factor, 'status': status}
 
     @staticmethod
     def apply_adjustments(db: Session, stock_id: int, raw_ohlcv_list: List[DailyOhlcv]) -> List[Dict[str, Any]]:
@@ -72,17 +77,19 @@ class CorporateActionService:
             dt = ohlcv.trading_date.date()
             factors = CorporateActionService.get_adjustment_factors(actions, dt)
             
-            p_f = float(factors['price_factor'])
-            v_f = float(factors['volume_factor'])
+            p_f = factors['price_factor']
+            v_f = factors['volume_factor']
+            status = factors['status']
             
             adjusted_data.append({
                 'trading_date': ohlcv.trading_date,
                 'series': ohlcv.series,
-                'open': ohlcv.open * p_f,
-                'high': ohlcv.high * p_f,
-                'low': ohlcv.low * p_f,
-                'close': ohlcv.close * p_f,
-                'volume': int(ohlcv.volume * v_f),
+                'open': Decimal(str(ohlcv.open)) * p_f,
+                'high': Decimal(str(ohlcv.high)) * p_f,
+                'low': Decimal(str(ohlcv.low)) * p_f,
+                'close': Decimal(str(ohlcv.close)) * p_f,
+                'volume': Decimal(str(ohlcv.volume)) * v_f,
+                'adjustment_status': status,
                 'original': ohlcv
             })
             
