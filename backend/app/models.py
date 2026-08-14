@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint
+from sqlalchemy import Numeric, Date, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -259,4 +259,25 @@ class DailyOhlcv(Base):
 
     __table_args__ = (
         UniqueConstraint('stock_id', 'trading_date', 'series', name='uq_stock_date_series'),
+    )
+
+
+class CorporateAction(Base):
+    __tablename__ = 'corporate_action'
+    corporate_action_id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_id = Column(Integer, ForeignKey('stock_master.stock_id'), nullable=False)
+    action_type = Column(String(50), nullable=False)
+    announcement_date = Column(Date, nullable=True)
+    record_date = Column(Date, nullable=True)
+    ex_date = Column(Date, nullable=False)
+    ratio_numerator = Column(Numeric(precision=20, scale=6), nullable=True)
+    ratio_denominator = Column(Numeric(precision=20, scale=6), nullable=True)
+    cash_amount = Column(Numeric(precision=20, scale=6), nullable=True)
+    source_name = Column(String(100), nullable=False)
+    source_reference = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    __table_args__ = (
+        CheckConstraint(action_type.in_(['SPLIT', 'BONUS', 'DIVIDEND', 'RIGHTS', 'OTHER']), name='check_action_type'),
     )
