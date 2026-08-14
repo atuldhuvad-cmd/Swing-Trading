@@ -36,6 +36,8 @@ class OhlcvService:
         rows_accepted = 0
         rows_rejected = 0
         rows_unmapped = 0
+        rows_ignored = 0
+        eq_rows_count = 0
         
         stock_cache = {}
         def get_stock_id(symbol: str) -> int | None:
@@ -78,9 +80,10 @@ class OhlcvService:
                 v = int(OhlcvService._parse_indian_number(row.get(v_col, ''))) if v_col and OhlcvService._parse_indian_number(row.get(v_col, '')) is not None else None
 
             if ser != 'EQ':
-                rows_rejected += 1
+                rows_ignored += 1
                 continue
                 
+            eq_rows_count += 1
             status = "ACCEPTED"
             msg = None
             
@@ -119,6 +122,9 @@ class OhlcvService:
                 message=msg
             ))
             
+        if eq_rows_count == 0:
+            raise ValueError("No EQ series rows found in file")
+
         sha = hashlib.sha256(file_content).hexdigest()
         
         # Format dates reliably for preview display
@@ -141,6 +147,7 @@ class OhlcvService:
             rows_accepted=rows_accepted,
             rows_rejected=rows_rejected,
             rows_unmapped=rows_unmapped,
+            rows_ignored=rows_ignored,
             preview_rows=preview_rows
         )
 
@@ -170,7 +177,7 @@ class OhlcvService:
             stock_id = stock_cache[r.symbol]
             
             try:
-                dt = datetime.strptime(r.trading_date, '%Y-%m-%d').date()
+                dt = datetime.strptime(r.trading_date, '%Y-%m-%d')
             except ValueError:
                 batch.rejected_rows += 1
                 continue

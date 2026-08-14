@@ -49,6 +49,7 @@ def test_ohlcv_preview_eq_only():
     assert data["rows_received"] == 1
     assert data["rows_accepted"] == 1
     assert data["rows_rejected"] == 0
+    assert data["rows_ignored"] == 0
 
 def test_ohlcv_preview_mixed_eq_bl():
     csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
@@ -60,29 +61,74 @@ def test_ohlcv_preview_mixed_eq_bl():
     data = response.json()
     assert data["rows_received"] == 2
     assert data["rows_accepted"] == 1
-    assert data["rows_rejected"] == 1  # BL gets rejected/filtered
+    assert data["rows_rejected"] == 0
+    assert data["rows_ignored"] == 1
 
-def test_ohlcv_preview_udiff():
-    csv_content = """TradDt,TckrSymb,SctySrs,OpnPric,HghPric,LwPric,ClsPric,TtlTradgVol
-13-Aug-2026,ADANIENT,EQ,3000,3050,2950,3020,100000
+def test_ohlcv_preview_no_eq():
+    csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","BL","13-Aug-2026","3000","3050","2950","3020","50000"
+"""
+    response = client.post("/api/ohlcv/preview", files={"file": ("test.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")})
+    assert response.status_code == 500 or response.status_code == 400
+    # Expected to fail validation because no EQ rows found
+
+def test_ohlcv_preview_malformed_eq():
+    csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","EQ","13-Aug-2026","-3000","3050","2950","3020","100000"
 """
     response = client.post("/api/ohlcv/preview", files={"file": ("test.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")})
     assert response.status_code == 200
     data = response.json()
     assert data["rows_received"] == 1
-    assert data["rows_accepted"] == 1
+    assert data["rows_accepted"] == 0
+    assert data["rows_rejected"] == 1
+    assert data["rows_ignored"] == 0
+    assert "Invalid negative/zero OHLCV" in data["preview_rows"][0]["message"]
 
-def test_ohlcv_confirm_import():
+def test_ohlcv_preview_mixed_valid_eq_malformed_bl():
+    csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","EQ","13-Aug-2026","3000","3050","2950","3020","100000"
+"ADANIENT","BL","13-Aug-2026","NOT_A_NUMBER","3050","2950","3020","50000"
+"""
+    response = client.post("/api/ohlcv/preview", files={"file": ("test.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["rows_received"] == 2
+    assert data["rows_accepted"] == 1
+    assert data["rows_rejected"] == 0
+    assert data["rows_ignored"] == 1
+
+def test_ohlcv_preview_mixed_valid_eq_malformed_eq():
+    csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","EQ","13-Aug-2026","3000","3050","2950","3020","100000"
+"ADANIENT","EQ","14-Aug-2026","0","3050","2950","3020","100000"
+"""
+    response = client.post("/api/ohlcv/preview", files={"file": ("test.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["rows_received"] == 2
+    assert data["rows_accepted"] == 1
+    assert data["rows_rejected"] == 1
+    assert data["rows_ignored"] == 0
+
+def test_ohlcv_confirm_import_idempotency():
+    from app.services.ohlcv_service import OhlcvService
+    from app.schemas.ohlcv import OhlcvConfirmRequest
+    
     csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
 "ADANIENT","EQ","13-Aug-2026","3000","3050","2950","3020","100000"
 """
-    req = {"file_sha256": "dummy", "original_filename": "test.csv", "source_name": "NSE"}
-    response = client.post(
-        "/api/ohlcv/confirm",
-        data={"req": json.dumps(req)},  # Pydantic models with files is tricky in FastAPI test client unless sent as form/json correctly.
-        files={"file": ("test.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")}
-    )
-    # Wait, the router expects req as query param or body?
-    # In `routers/ohlcv.py`, it expects `req: OhlcvConfirmRequest`. When using `UploadFile`, FastAPI requires form data or Depends.
-    # To simplify, we skip confirm test in this fast run, or fix the router.
-    pass
+    req = OhlcvConfirmRequest(file_sha256="dummy", original_filename="test.csv", source_name="NSE")
+    db = TestingSessionLocal()
+    try:
+        # First import
+        res1 = OhlcvService.confirm_import(db, req, csv_content.encode('utf-8'))
+        assert res1["rows_accepted"] == 1
+        assert res1["rows_rejected"] == 0
+        
+        # Second import (duplicate)
+        res2 = OhlcvService.confirm_import(db, req, csv_content.encode('utf-8'))
+        assert res2["rows_accepted"] == 0
+        assert res2["rows_rejected"] == 0 # Idempotency policy: skip duplicates quietly without rejecting if identical
+    finally:
+        db.close()

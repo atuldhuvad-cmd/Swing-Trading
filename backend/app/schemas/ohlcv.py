@@ -21,6 +21,7 @@ class OhlcvPreviewResponse(BaseModel):
     rows_accepted: int
     rows_rejected: int
     rows_unmapped: int
+    rows_ignored: int = 0
     preview_rows: List[OhlcvPreviewRow]
 
 class OhlcvConfirmRequest(BaseModel):

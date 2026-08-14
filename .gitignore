@@ -77,3 +77,4 @@ playwright-report/
 
 # Database backups
 data/backups/
+*.sqlite
