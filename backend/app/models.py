@@ -281,3 +281,31 @@ class CorporateAction(Base):
     __table_args__ = (
         CheckConstraint(action_type.in_(['SPLIT', 'BONUS', 'DIVIDEND', 'RIGHTS', 'OTHER']), name='check_action_type'),
     )
+
+
+class FundamentalSnapshot(Base):
+    __tablename__ = 'fundamental_snapshot'
+    snapshot_id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_id = Column(Integer, ForeignKey('stock_master.stock_id'), nullable=False)
+    as_of_date = Column(Date, nullable=False)
+    financial_period = Column(String(50), nullable=True)
+    period_type = Column(String(50), nullable=True)
+    source_reference_id = Column(Integer, ForeignKey('source_reference.source_reference_id'), nullable=True)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    is_superseded = Column(Boolean, default=False, nullable=False)
+    superseded_by_id = Column(Integer, ForeignKey('fundamental_snapshot.snapshot_id'), nullable=True)
+    entity_type = Column(String(50), nullable=False, default='ORDINARY')
+
+class FundamentalMetric(Base):
+    __tablename__ = 'fundamental_metric'
+    metric_id = Column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id = Column(Integer, ForeignKey('fundamental_snapshot.snapshot_id'), nullable=False)
+    metric_name = Column(String(100), nullable=False)
+    metric_value = Column(Float, nullable=True)
+    status = Column(String(50), nullable=False)
+    
+    __table_args__ = (
+        CheckConstraint(status.in_(['KNOWN', 'UNKNOWN', 'NOT_APPLICABLE', 'STALE', 'UNSUPPORTED']), name='check_fundamental_status'),
+        UniqueConstraint('snapshot_id', 'metric_name', name='uq_snapshot_metric'),
+    )
