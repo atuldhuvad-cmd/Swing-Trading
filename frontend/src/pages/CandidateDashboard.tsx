@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { consensusApi } from '../api';
 import { Filter, ArrowUpDown, ChevronRight, TrendingUp, Users, Clock } from 'lucide-react';
+import BackLink from '../components/BackLink';
 
 interface CandidateSummary {
   stock_id: number;
@@ -106,14 +107,15 @@ export default function CandidateDashboard() {
 
   return (
     <div className="space-y-4">
+      <BackLink fallback="/data" />
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Users className="text-blue-600 w-5 h-5" /> Broker Candidate Universe
+            <Users className="text-blue-600 w-5 h-5" /> Broker Opinion Universe
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Transparent broker consensus metrics ({total} candidates)
+            Transparent broker consensus metrics ({total} stocks)
           </p>
         </div>
         <button
@@ -215,12 +217,12 @@ export default function CandidateDashboard() {
 
       {/* Main Candidate Grid / Cards */}
       {loading ? (
-        <div className="text-center py-8 text-gray-500 text-sm">Loading broker candidates...</div>
+        <div className="text-center py-8 text-gray-500 text-sm">Loading broker consensus...</div>
       ) : error ? (
         <div className="bg-red-50 p-4 rounded-md text-red-600 text-sm border border-red-200">{error}</div>
       ) : candidates.length === 0 ? (
         <div className="bg-white p-8 text-center rounded-lg border border-gray-200 text-gray-500">
-          No candidate stocks match the selected criteria.
+          No stocks match the selected criteria.
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3">
@@ -241,7 +243,7 @@ export default function CandidateDashboard() {
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs text-gray-500">CMP</div>
+                  <div className="text-xs text-gray-500">Broker/consensus CMP</div>
                   <div className="font-bold text-sm text-gray-900">
                     {c.cmp !== null && c.cmp !== undefined ? `₹${c.cmp.toLocaleString()}` : 'N/A'}
                   </div>

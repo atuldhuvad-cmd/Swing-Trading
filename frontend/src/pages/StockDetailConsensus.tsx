@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { consensusApi } from '../api';
-import { ArrowLeft, Users, TrendingUp, ShieldCheck, ExternalLink, Award, ChevronDown, ChevronUp } from 'lucide-react';
+import BackLink from '../components/BackLink';
+import { Users, TrendingUp, ShieldCheck, ExternalLink, Award, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface SourceReference {
   source_reference_id: number;
@@ -74,7 +75,6 @@ interface StockConsensus {
 
 export default function StockDetailConsensus() {
   const { stockId } = useParams<{ stockId: string }>();
-  const navigate = useNavigate();
 
   const [consensus, setConsensus] = useState<StockConsensus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,18 +99,18 @@ export default function StockDetailConsensus() {
   }, [stockId]);
 
   if (loading) {
-    return <div className="text-center py-12 text-gray-500">Loading stock consensus...</div>;
+    return (
+      <div className="space-y-2 min-w-0">
+        <BackLink fallback="/broker-opinion" />
+        <div className="text-center py-12 text-gray-500">Loading stock consensus...</div>
+      </div>
+    );
   }
 
   if (error || !consensus) {
     return (
-      <div className="space-y-4">
-        <button
-          onClick={() => navigate('/')}
-          className="inline-flex items-center text-sm font-medium text-blue-600 hover:underline"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Candidate Universe
-        </button>
+      <div className="space-y-4 min-w-0">
+        <BackLink fallback="/broker-opinion" />
         <div className="bg-red-50 p-4 rounded-md text-red-600 text-sm border border-red-200">
           {error || 'Stock consensus data unavailable.'}
         </div>
@@ -121,14 +121,8 @@ export default function StockDetailConsensus() {
   const m = consensus.metrics;
 
   return (
-    <div className="space-y-4">
-      {/* Top Back Navigation */}
-      <button
-        onClick={() => navigate('/')}
-        className="inline-flex items-center text-sm font-medium text-blue-600 hover:underline mb-1"
-      >
-        <ArrowLeft className="w-4 h-4 mr-1" /> Back to Candidate Universe
-      </button>
+    <div className="space-y-4 min-w-0">
+      <BackLink fallback="/broker-opinion" />
 
       {/* Stock Header Card */}
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
@@ -138,6 +132,9 @@ export default function StockDetailConsensus() {
               <h1 className="text-2xl font-bold text-gray-900">{consensus.nse_symbol}</h1>
               {consensus.bse_symbol && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600">BSE: {consensus.bse_symbol}</span>}
               <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">{consensus.listing_status}</span>
+              <Link to={`/evidence/${consensus.stock_id}`} className="text-xs font-medium text-blue-600 hover:underline ml-2 flex items-center">
+                Phase 5 Evidence <ExternalLink className="w-3 h-3 ml-1" />
+              </Link>
             </div>
             <h2 className="text-sm font-medium text-gray-600 mt-0.5">{consensus.company_name}</h2>
             <div className="flex flex-wrap gap-2 text-xs text-gray-500 mt-2">
@@ -148,7 +145,7 @@ export default function StockDetailConsensus() {
           </div>
 
           <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-right min-w-[140px]">
-            <div className="text-xs text-blue-600 font-medium">Current Market Price (CMP)</div>
+            <div className="text-xs text-blue-600 font-medium">Broker/consensus CMP</div>
             <div className="text-xl font-bold text-blue-900 mt-0.5">
               {consensus.cmp !== null && consensus.cmp !== undefined ? `₹${consensus.cmp.toLocaleString()}` : 'N/A'}
             </div>

@@ -1,0 +1,176 @@
+PERSONAL-USE MAINTENANCE PLAN
+Project: Swing Trading (personal-use, non-commercial)
+Working path: D:\Swing Trading
+Baseline: data/core_baseline_freeze_20260820_215900.txt
+Status: SWING TRADING CORE BASELINE FROZEN — READY FOR PERSONAL USE
+Created: 2026-08-20
+
+================================================================================
+1. NORMAL PERSONAL USE
+================================================================================
+
+Use the app as an evidence and execution journal — not an automated trading system.
+
+A. Genuine NSE OHLCV updates
+   - Source: verified NSE cash EQ CSV files under manual_inputs/nse/ (or equivalent).
+   - Import via UI: Market Data path / import flows, or controlled scratch scripts that
+     call OhlcvService.confirm_import (see scratch/batch_*_production_import.py).
+   - Never insert synthetic or placeholder OHLCV into production.
+
+B. Verified fundamental evidence updates
+   - Source: manually verified annual/report PDFs or structured intake under
+     manual_inputs/fundamentals/.
+   - Import via UI: /fundamentals/import (preview → confirm).
+   - Preserve provenance: entity type, source line item, period, KNOWN/UNKNOWN status.
+   - Insurance entities (e.g. HDFCLIFE) use insurance line items, not ordinary revenue labels.
+
+C. Controlled Phase 5 re-evaluation
+   - Run only when OHLCV and/or fundamentals have materially changed for covered stocks.
+   - Use scratch/batch_b_phase5_reeval.py (or successor controlled script) — it appends
+     NEW candidate_evaluation_run rows; it does not rewrite historical evaluations.
+   - Phase 5 config fingerprint must remain:
+     146408d7d5de3ce55acd5465d2c788acca9d8e1875c21e1af470151a3f0f97fe
+   - FINAL_CANDIDATE means “passes Phase 5 trend screen” — not BUY.
+
+D. Deliberate manual broker-opinion evidence
+   - Enter via Recommendation Entry (/recommendations/new) or Import Wizard (/imports/new).
+   - Attach official source URL, dates, verification status (VERIFIED_PRIMARY preferred).
+   - Provisional/rejected sources must not inflate the Broker Opinion Universe.
+   - Consensus is display-only on evidence pages; it does NOT gate Phase 5.
+
+E. Manual Trade Journal use
+   - Browse Final Candidates → Evidence → Plan Trade → Journal (/trades).
+   - Lifecycle: PLANNED → OPEN → CLOSED, or PLANNED → CANCELLED.
+   - Entry/exit prices and price sources are typed manually at execution time.
+   - No live prices, no OHLCV/planned/target substitution, no broker auto-fill.
+
+================================================================================
+2. SAFE UPDATE ORDER (history-first)
+================================================================================
+
+When refreshing market or fundamental evidence for existing NIFTY-50 coverage:
+
+  1. BACKUP production DB (see §3).
+  2. Confirm stock exists in Master Data (/master) — register new symbols first if needed.
+  3. Import genuine OHLCV for affected symbols.
+  4. Verify Market Data Status (/market-data): session counts, SMA200 readiness, latest date.
+  5. Import verified fundamentals for affected symbols (preview must match confirm payload).
+  6. Run controlled Phase 5 re-evaluation (creates new eval + criterion + RR rows).
+  7. Review Candidate Evaluation (/final-candidates) and Evidence detail (/evidence/:id).
+  8. Optionally add/update broker recommendations (separate from Phase 5 classification).
+  9. Optionally plan/open/close trades in Trade Journal (personal execution only).
+
+Immutable / history-first rules:
+  - Do not delete or overwrite prior candidate_evaluation_run, criterion, or RR history.
+  - Do not mutate OHLCV/fundamentals to “fix” a classification — add corrected evidence instead.
+  - Do not run workflow validation or e2e trade tests against production (use DB copy).
+  - Trade Journal rows are preserved through CANCELLED/CLOSED terminal states.
+
+================================================================================
+3. BACKUP / DATA SAFETY
+================================================================================
+
+Production DB: D:\Swing Trading\data\swing_trading.db
+
+REQUIRED backup (timestamped file copy to data/) BEFORE:
+  - Alembic migration (alembic upgrade)
+  - Any bulk OHLCV production import
+  - Fundamental confirm import to production
+  - Controlled Phase 5 re-evaluation script against production
+  - Broker recommendation import confirm to production
+  - Any manual SQL or scratch script that writes to production
+
+RECOMMENDED backup BEFORE:
+  - Single manual recommendation entry (low risk, but cheap insurance)
+  - Trade Journal activity (optional — journal is personal; restore is for mistake recovery)
+
+Backup command (PowerShell example):
+  Copy-Item "D:\Swing Trading\data\swing_trading.db" `
+    "D:\Swing Trading\data\swing_trading_backup_YYYYMMDD_HHMMSS.db"
+
+After material writes, optionally record SHA-256 and table counts alongside the backup
+(mirror format in core_baseline_freeze_20260820_215900.txt).
+
+================================================================================
+4. PERIODIC HEALTH CHECK (lightweight, manual)
+================================================================================
+
+Run when you change code, import data, or monthly during active use:
+
+  SQLite:
+    PRAGMA integrity_check;          -- expect: ok
+    PRAGMA foreign_key_check;        -- expect: empty
+
+  Data quality:
+    SELECT COUNT(*) FROM daily_ohlcv WHERE lower(source_name) LIKE '%synthetic%';  -- expect: 0
+    trade_journal count               -- expect: only your real personal trades
+    Phase 5 fingerprint on latest /api/evidence/candidates items
+
+  If application code changed:
+    cd backend && venv\Scripts\python.exe -m pytest
+    cd frontend && npm test && npm run build
+    Optional after UI/routing changes: Playwright against disposable DB copy only
+
+  Provenance review after fundamental import:
+    - source_line_item visible on evidence pages
+    - KNOWN vs UNKNOWN respected; insurance entity types correct
+
+No scheduled automation required — run checks deliberately after meaningful activity.
+
+================================================================================
+5. TECHNICAL DEBT (record only — do not fix unless triggered)
+================================================================================
+
+| Item                                          | Classification      |
+|-----------------------------------------------|---------------------|
+| Pydantic class Config → ConfigDict warnings   | FIX WHEN TOUCHED    |
+| datetime.utcnow() deprecation in backend/tests| FIX WHEN TOUCHED    |
+| Starlette TestClient httpx deprecation        | LOW PRIORITY        |
+| README Stage 7 “five-stock ICICI pilot” text  | LOW PRIORITY        |
+| scratch/ folder accumulation (98+ scripts)    | IGNORE FOR NOW      |
+
+================================================================================
+6. FEATURE HOLD (do not build unless personal need is demonstrated)
+================================================================================
+
+Remain unbuilt:
+  - Automated broker order execution or position monitoring
+  - Scraping-heavy / unattended recommendation harvesting
+  - Multi-user auth, SaaS, subscriptions, external customers
+  - Artificial scoring, ranking, or “BUY” signals beyond Phase 5 trend screen
+  - Live-price feeds, auto-fill for Trade Journal entry/exit
+  - Portfolio optimization, alerts, notifications, social features
+  - Commercial release machinery (CI packaging, licensing, cloud sync)
+  - Making broker consensus a Phase 5 gate or trade trigger
+
+================================================================================
+7. VALID NEXT ENGINEERING TRIGGERS
+================================================================================
+
+Reopen development only when a concrete need appears:
+
+  - New NIFTY 50 OHLCV batch requiring import + Phase 5 re-eval
+  - New verified fundamental batch (ordinary or insurance) with provenance rules
+  - Genuine defect in frozen workflow (repro on disposable DB copy first)
+  - Required Alembic schema migration (backup + migration tests mandatory)
+  - Recurring manual pain in an existing screen (not hypothetical convenience)
+  - Materially expanded broker evidence base needing UI/import adjustments
+  - Demonstrated personal need for another journal capability (still manual-only)
+
+Do NOT start a “Phase 6” or feature sprint merely because the baseline is complete.
+
+================================================================================
+QUICK REFERENCE — UI ROUTES
+================================================================================
+
+  /                         Broker Opinion Universe (consensus display)
+  /final-candidates         Phase 5 Candidate Evaluation
+  /evidence/:stockId        Evidence detail + Plan Trade
+  /market-data              OHLCV readiness
+  /fundamentals/import      Fundamental preview/confirm
+  /recommendations/new      Manual broker recommendation
+  /imports/new              CSV/XLSX recommendation import
+  /trades                   Trade Journal
+  /trades/plan/:stockId     Plan Trade form
+
+Verified test baseline (2026-08-20): backend 173, frontend 45, build PASS, Playwright 160/160.

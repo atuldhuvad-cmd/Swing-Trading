@@ -1,8 +1,31 @@
 import pytest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from app.models import CorporateAction, DailyOhlcv
 from app.services.corporate_action_service import CorporateActionService
+
+def test_apply_adjustments_does_not_mutate_raw():
+    from types import SimpleNamespace
+    raw = SimpleNamespace(trading_date=datetime(2024, 12, 1), series='EQ', open=100.0, high=110.0, low=90.0, close=105.0, volume=1000)
+    actions_holder = []
+
+    class DummyDB:
+        def query(self, model):
+            class Q:
+                def filter(self, *a, **k):
+                    return self
+                def order_by(self, *a, **k):
+                    return self
+                def all(self):
+                    return actions_holder
+            return Q()
+
+    out = CorporateActionService.apply_adjustments(DummyDB(), 1, [raw])
+    assert raw.open == 100.0
+    assert raw.close == 105.0
+    assert out[0]['open'] == Decimal('100.0')
+    assert out[0]['original'] is raw
+
 
 def test_split_bonus_adjustments():
     # Synthetic data for logic testing without DB

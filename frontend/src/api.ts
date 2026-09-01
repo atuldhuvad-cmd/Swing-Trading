@@ -60,4 +60,25 @@ export const settingsApi = {
   updateSettings: (payload: any) => api.put('/reference/settings', payload).then(res => res.data),
 };
 
+export const evidenceApi = {
+  getCandidates: () => api.get('/evidence/candidates').then(res => res.data),
+  getStockEvidence: (stockId: number) => api.get(`/evidence/stocks/${stockId}`).then(res => res.data),
+  getMarketData: () => api.get('/evidence/market-data').then(res => res.data),
+};
+
+export const fundamentalsApi = {
+  getCatalog: () => api.get('/fundamentals/catalog').then(res => res.data),
+  preview: (payload: any) => api.post('/fundamentals/preview', payload).then(res => res.data),
+  confirm: (payload: any) => api.post('/fundamentals/confirm', payload).then(res => res.data),
+};
+
 export default api;
+
+export const tradesApi = {
+  calculatePositionSize: (req: { entry_price: number, stop_price: number, max_risk_amount: number, max_capital_allocation?: number }) =>
+    api.post('/trades/position-size', req).then(res => res.data),
+  createTrade: (req: any) => api.post('/trades/', req).then(res => res.data),
+  updateTrade: (tradeId: number, req: any) => api.patch('/trades/' + tradeId, req).then(res => res.data),
+  getTrades: () => api.get('/trades/').then(res => res.data),
+  getTrade: (tradeId: number) => api.get('/trades/' + tradeId).then(res => res.data),
+};

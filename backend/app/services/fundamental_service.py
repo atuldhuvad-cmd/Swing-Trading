@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from ..models import FundamentalSnapshot, FundamentalMetric, StockMaster
+from .fundamental_catalog import ENTITY_TYPES
 from decimal import Decimal
 
 class FundamentalService:
@@ -19,12 +20,15 @@ class FundamentalService:
         entity_type: str = 'ORDINARY',
         metrics: Dict[str, Dict[str, Any]] = None,
         source_reference_id: int = None,
-        reference_date: date = None
+        reference_date: date = None,
+        statement_scope: str = None,
+        source_line_item: str = None,
+        original_unit: str = None,
     ) -> FundamentalSnapshot:
         if metrics is None:
             metrics = {}
             
-        if entity_type not in ['ORDINARY', 'BANK', 'NBFC']:
+        if entity_type not in ENTITY_TYPES:
             raise ValueError(f"Invalid entity_type: {entity_type}")
             
         # check if a previous snapshot exists for the SAME stock, financial period, and period type
@@ -49,7 +53,10 @@ class FundamentalService:
             captured_at=datetime.utcnow(),
             version=version,
             is_superseded=False,
-            entity_type=entity_type
+            entity_type=entity_type,
+            statement_scope=statement_scope,
+            source_line_item=source_line_item,
+            original_unit=original_unit,
         )
         db.add(snapshot)
         db.flush()

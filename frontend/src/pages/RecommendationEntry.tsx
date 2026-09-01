@@ -1,6 +1,7 @@
 import { useEffect,useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
+import BackLink from '../components/BackLink';
 
 export default function RecommendationEntry(){
  const nav=useNavigate(); const [stocks,setStocks]=useState<any[]>([]),[brokers,setBrokers]=useState<any[]>([]),[error,setError]=useState('');
@@ -10,7 +11,7 @@ export default function RecommendationEntry(){
  function optionalNumber(v: string) { return v === '' ? null : Number(v); }
  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');if(!f.stock_id||!f.broker_id||!f.recommendation_date||!f.original_rating||!f.source_url||!f.original_text){setError('Please fill all required fields');return;}try{await api.post('/recommendations',{stock_id:+f.stock_id,broker_id:+f.broker_id,recommendation_date:f.recommendation_date+'T00:00:00',original_rating:f.original_rating,normalized_rating:f.original_rating.trim().toUpperCase().replace(/\s+/g,'_'),recommended_price:optionalNumber(f.recommended_price),target_price:optionalNumber(f.target_price),stop_loss:optionalNumber(f.stop_loss),time_horizon_text:f.time_horizon_text||null,analyst_name:f.analyst_name||null,currency:'INR',lifecycle_status:'CURRENT',evidence:[{source_type_id:1,publication_name:f.publication_name||null,url:f.source_url,source_date:f.source_date?f.source_date+'T00:00:00':null,original_text:f.original_text,verification_status:f.verification_status}]});nav('/recommendations');}catch(err:any){setError(err.response?.data?.detail||'Unable to save recommendation');}};
  const input='mt-1 w-full min-h-11 border rounded p-2';
- return <div className="max-w-xl mx-auto space-y-4"><h1 className="text-2xl font-bold">New Recommendation</h1><p className="text-sm text-gray-600">Enter only explicitly published, traceable broker research. Missing values remain N/A.</p>{error&&<p className="bg-red-50 text-red-700 p-3 rounded break-words">{error}</p>}<form onSubmit={submit} className="bg-white border rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+ return <div className="max-w-xl mx-auto space-y-4 min-w-0"><BackLink fallback="/recommendations" /><h1 className="text-2xl font-bold">New Recommendation</h1><p className="text-sm text-gray-600">Enter only explicitly published, traceable broker research. Missing values remain N/A.</p>{error&&<p className="bg-red-50 text-red-700 p-3 rounded break-words">{error}</p>}<form onSubmit={submit} className="bg-white border rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
  <label className="text-sm">Stock<select className={input} value={f.stock_id} onChange={e=>updateField('stock_id',e.target.value)}><option value="">Select</option>{stocks.map(s=><option key={s.stock_id} value={s.stock_id}>{s.nse_symbol}</option>)}</select></label>
  <label className="text-sm">Broker<select className={input} value={f.broker_id} onChange={e=>updateField('broker_id',e.target.value)}><option value="">Select</option>{brokers.map(b=><option key={b.broker_id} value={b.broker_id}>{b.display_name}</option>)}</select></label>
  <label className="text-sm">Recommendation date<input type="date" className={input} value={f.recommendation_date} onChange={e=>updateField('recommendation_date',e.target.value)}/></label>

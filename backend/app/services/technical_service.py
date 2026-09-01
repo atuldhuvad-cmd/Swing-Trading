@@ -43,6 +43,8 @@ class TechnicalService:
             'ROC20': None,
             'Breakout20_threshold': None,
             'Breakout20_status': None,
+            'Support20': None,
+            'Resistance20': None,
             'Liquidity20': None,
             'adjustment_status': adjusted_ohlcv[-1].get('adjustment_status', 'NO_ADJUSTMENT')
         }
@@ -112,12 +114,14 @@ class TechnicalService:
                 roc20 = ((close_now - close_20_ago) / close_20_ago) * 100
                 result['ROC20'] = Decimal(str(round(roc20, 2)))
 
-        # Breakout20
+        # Breakout20 / Support20 / Resistance20 from prior 20 completed sessions
         if n_sessions >= 21:
-            # Prior 20 completed sessions (excluding current)
             prior_20_highs = df['high'].iloc[-21:-1]
+            prior_20_lows = df['low'].iloc[-21:-1]
             threshold = prior_20_highs.max()
             result['Breakout20_threshold'] = Decimal(str(round(threshold, 2)))
+            result['Resistance20'] = Decimal(str(round(threshold, 2)))
+            result['Support20'] = Decimal(str(round(prior_20_lows.min(), 2)))
             result['Breakout20_status'] = "POSITIVE" if df['close'].iloc[-1] > threshold else "NEGATIVE"
 
         # Liquidity20

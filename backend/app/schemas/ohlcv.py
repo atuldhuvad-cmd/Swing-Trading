@@ -22,6 +22,8 @@ class OhlcvPreviewResponse(BaseModel):
     rows_rejected: int
     rows_unmapped: int
     rows_ignored: int = 0
+    rows_duplicates: int = 0
+    rows_conflicts: int = 0
     preview_rows: List[OhlcvPreviewRow]
 
 class OhlcvConfirmRequest(BaseModel):

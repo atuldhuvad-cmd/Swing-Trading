@@ -25,7 +25,7 @@ describe('Mobile Layout Width Validation', () => {
       );
 
       // Verify main container renders
-      expect(screen.getByText('Broker Candidate Universe')).toBeDefined();
+      expect(screen.getByText('Broker Opinion Universe')).toBeDefined();
       expect(screen.getByText(/Filters & Sort/i)).toBeDefined();
 
       // Check responsive card wrapper exists

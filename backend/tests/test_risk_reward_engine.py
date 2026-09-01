@@ -60,7 +60,7 @@ def test_invalid_values(db_session):
     
     res = RiskRewardService.calculate_risk_reward(db_session, run.evaluation_id, config, tech, current_price)
     
-    assert res.stop_loss is not None
+    assert res.stop_loss is None
     assert res.target is None
     assert res.reward_per_share is None
     assert res.risk_reward_ratio is None

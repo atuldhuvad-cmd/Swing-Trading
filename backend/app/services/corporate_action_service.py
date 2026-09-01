@@ -74,7 +74,8 @@ class CorporateActionService:
         
         adjusted_data = []
         for ohlcv in raw_ohlcv_list:
-            dt = ohlcv.trading_date.date()
+            raw_dt = ohlcv.trading_date
+            dt = raw_dt.date() if hasattr(raw_dt, 'date') else raw_dt
             factors = CorporateActionService.get_adjustment_factors(actions, dt)
             
             p_f = factors['price_factor']

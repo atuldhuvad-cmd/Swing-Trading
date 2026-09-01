@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { importsApi } from '../api';
+import BackLink from '../components/BackLink';
 
 export default function ImportHistory() {
   const [batches, setBatches] = useState<any[]>([]);
@@ -21,7 +22,8 @@ export default function ImportHistory() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
+    <div className="max-w-4xl mx-auto p-4 space-y-4 min-w-0">
+      <BackLink fallback="/imports/new" />
       <h1 className="text-2xl font-bold">Import History</h1>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm whitespace-nowrap bg-white shadow-sm border rounded">

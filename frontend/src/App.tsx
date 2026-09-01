@@ -1,5 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
+import Home from './pages/Home';
+import DataHub from './pages/DataHub';
 import CandidateDashboard from './pages/CandidateDashboard';
 import StockDetailConsensus from './pages/StockDetailConsensus';
 import RecommendationEntry from './pages/RecommendationEntry';
@@ -10,12 +12,24 @@ import ReviewQueue from './pages/ReviewQueue';
 import SourceReadiness from './pages/SourceReadiness';
 import Settings from './pages/Settings';
 import BrokerRecommendations from './pages/BrokerRecommendations';
+import FinalCandidates from './pages/FinalCandidates';
+import CandidateEvidence from './pages/CandidateEvidence';
+import MarketDataStatus from './pages/MarketDataStatus';
+import FundamentalImport from './pages/FundamentalImport';
+import TradeJournal from './pages/TradeJournal';
+import TradePlanForm from './pages/TradePlanForm';
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
-        <Route index element={<CandidateDashboard />} />
+        <Route index element={<Home />} />
+        <Route path="data" element={<DataHub />} />
+        <Route path="final-candidates" element={<FinalCandidates />} />
+        <Route path="evidence/:stockId" element={<CandidateEvidence />} />
+        <Route path="market-data" element={<MarketDataStatus />} />
+        <Route path="fundamentals/import" element={<FundamentalImport />} />
+        <Route path="broker-opinion" element={<CandidateDashboard />} />
         <Route path="consensus/:stockId" element={<StockDetailConsensus />} />
         <Route path="recommendations/new" element={<RecommendationEntry />} />
         <Route path="recommendations" element={<BrokerRecommendations />} />
@@ -25,6 +39,8 @@ function App() {
         <Route path="review" element={<ReviewQueue />} />
         <Route path="source-readiness" element={<SourceReadiness />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="trades" element={<TradeJournal />} />
+        <Route path="trades/plan/:stockId" element={<TradePlanForm />} />
       </Route>
     </Routes>
   );

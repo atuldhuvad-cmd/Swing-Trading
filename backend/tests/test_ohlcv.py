@@ -24,13 +24,13 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
-
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup_db():
     from app.models import StockMaster, DailyOhlcv, DataImportBatch
+    previous = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = override_get_db
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     db.add(StockMaster(nse_symbol="ADANIENT", company_name="Adani Ent", listing_status="ACTIVE"))
@@ -38,6 +38,10 @@ def setup_db():
     db.close()
     yield
     Base.metadata.drop_all(bind=engine)
+    if previous is not None:
+        app.dependency_overrides[get_db] = previous
+    else:
+        app.dependency_overrides.pop(get_db, None)
 
 def test_ohlcv_preview_eq_only():
     csv_content = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
@@ -110,6 +114,49 @@ def test_ohlcv_preview_mixed_valid_eq_malformed_eq():
     assert data["rows_accepted"] == 1
     assert data["rows_rejected"] == 1
     assert data["rows_ignored"] == 0
+
+def test_ohlcv_preview_quote_slb_rejected():
+    csv_content = """Symbol,Date,Settlement Date,Series,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","30-JUL-2026","01-SEP-2026","X9","4.90","4.90","4.90","4.90","7"
+"""
+    response = client.post("/api/ohlcv/preview", files={"file": ("Quote-SLB-ADANIENT-EQ.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")})
+    assert response.status_code == 400
+    assert "Quote-SLB" in response.json()["detail"]
+
+
+def test_ohlcv_preview_udiff_eq_and_non_eq():
+    csv_content = """TradDt,TckrSymb,SctySrs,OpnPric,HghPric,LwPric,ClsPric,TtlTradgVol
+2026-08-12,ADANIENT,EQ,3000,3050,2950,3020,100000
+2026-08-12,ADANIENT,BL,3000,3050,2950,3020,50
+"""
+    response = client.post("/api/ohlcv/preview", files={"file": ("udiff.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["rows_received"] == 2
+    assert data["rows_accepted"] == 1
+    assert data["rows_ignored"] == 1
+
+
+def test_ohlcv_confirm_conflict():
+    from app.services.ohlcv_service import OhlcvService
+    from app.schemas.ohlcv import OhlcvConfirmRequest
+
+    first = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","EQ","13-Aug-2026","3000","3050","2950","3020","100000"
+"""
+    conflict = """Symbol,Series,Date,Open Price,High Price,Low Price,Close Price,Total Traded Quantity
+"ADANIENT","EQ","13-Aug-2026","3100","3150","3050","3120","200000"
+"""
+    db = TestingSessionLocal()
+    try:
+        req = OhlcvConfirmRequest(file_sha256="dummy", original_filename="a.csv", source_name="NSE")
+        OhlcvService.confirm_import(db, req, first.encode("utf-8"))
+        preview = OhlcvService.parse_historical_file(db, conflict.encode("utf-8"), "b.csv")
+        assert preview.rows_conflicts == 1
+        assert preview.rows_accepted == 0
+    finally:
+        db.close()
+
 
 def test_ohlcv_confirm_import_idempotency():
     from app.services.ohlcv_service import OhlcvService

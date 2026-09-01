@@ -1,5 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { consensusApi } from '../api';
+import BackLink from '../components/BackLink';
 import { CheckCircle, AlertCircle, Lock, FileText, Globe, XCircle, ChevronDown, ChevronUp, Radio } from 'lucide-react';
 
 interface StreamInfo {
@@ -96,7 +97,8 @@ export default function SourceReadiness() {
   const getCategoryConfig = (cat: string) => CATEGORY_CONFIG[cat] || CATEGORY_CONFIG['UNSUITABLE'];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
+      <BackLink fallback="/data" />
       {/* Header */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <div className="flex items-center gap-2 mb-1">

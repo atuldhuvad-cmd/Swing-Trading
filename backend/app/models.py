@@ -256,6 +256,7 @@ class DailyOhlcv(Base):
     source_name = Column(String(100), nullable=False)
     import_batch_id = Column(Integer, ForeignKey('data_import_batch.import_batch_id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    stock = relationship("StockMaster")
 
     __table_args__ = (
         UniqueConstraint('stock_id', 'trading_date', 'series', name='uq_stock_date_series'),
@@ -296,9 +297,20 @@ class FundamentalSnapshot(Base):
     is_superseded = Column(Boolean, default=False, nullable=False)
     superseded_by_id = Column(Integer, ForeignKey('fundamental_snapshot.snapshot_id'), nullable=True)
     entity_type = Column(String(50), nullable=False, default='ORDINARY')
+    statement_scope = Column(String(20), nullable=True)
+    source_line_item = Column(String(100), nullable=True)
+    original_unit = Column(String(30), nullable=True)
     
     __table_args__ = (
-        CheckConstraint(entity_type.in_(['ORDINARY', 'BANK', 'NBFC']), name='check_entity_type'),
+        CheckConstraint(entity_type.in_(['ORDINARY', 'BANK', 'NBFC', 'INSURANCE']), name='check_entity_type'),
+        CheckConstraint(
+            "statement_scope IS NULL OR statement_scope IN ('CONSOLIDATED', 'STANDALONE')",
+            name='check_statement_scope',
+        ),
+        CheckConstraint(
+            "original_unit IS NULL OR original_unit IN ('INR_CRORE', 'INR_MILLION', 'INR_LAKH')",
+            name='check_original_unit',
+        ),
     )
 
 class FundamentalMetric(Base):
@@ -363,3 +375,34 @@ class RiskRewardResult(Base):
     config_fingerprint = Column(String(64), nullable=False)
     config_snapshot = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+class TradeJournal(Base):
+    __tablename__ = 'trade_journal'
+    trade_id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_id = Column(Integer, ForeignKey('stock_master.stock_id'), nullable=False)
+    candidate_evaluation_id = Column(Integer, ForeignKey('candidate_evaluation_run.evaluation_id'), nullable=True)
+    risk_reward_result_id = Column(Integer, ForeignKey('risk_reward_result.result_id'), nullable=True)
+    status = Column(String(50), nullable=False, default='PLANNED')
+    side = Column(String(20), nullable=False, default='LONG')
+    planned_entry_price = Column(Numeric(precision=20, scale=4), nullable=True)
+    planned_stop_price = Column(Numeric(precision=20, scale=4), nullable=True)
+    planned_target_price = Column(Numeric(precision=20, scale=4), nullable=True)
+    quantity = Column(Integer, nullable=True)
+    entry_price = Column(Numeric(precision=20, scale=4), nullable=True)
+    entry_date = Column(DateTime, nullable=True)
+    entry_note = Column(Text, nullable=True)
+    entry_price_source = Column(String(100), nullable=True)
+    exit_price = Column(Numeric(precision=20, scale=4), nullable=True)
+    exit_date = Column(DateTime, nullable=True)
+    exit_note = Column(Text, nullable=True)
+    exit_price_source = Column(String(100), nullable=True)
+    manual_charges = Column(Numeric(precision=20, scale=4), nullable=True)
+    gross_pnl = Column(Numeric(precision=20, scale=4), nullable=True)
+    net_pnl = Column(Numeric(precision=20, scale=4), nullable=True)
+    trade_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(status.in_(['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED']), name='check_trade_status'),
+    )

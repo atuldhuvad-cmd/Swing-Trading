@@ -1,0 +1,51 @@
+CORE BASELINE FREEZE 20260820_215900
+Project: Swing Trading (personal-use, non-commercial)
+Working path: D:\Swing Trading
+Gate: SWING TRADING CORE WORKFLOW VERIFIED — READY FOR BASELINE FREEZE
+
+PRODUCTION DATABASE
+SHA-256: 310b405c3b70ac4756e0fc58a1d3fdadfe03507a1cb0691d3598f5c75e873f62
+Alembic head: a1b2c3d4e5f6
+SQLite integrity_check: ok
+PRAGMA foreign_key_check: (none)
+
+PRODUCTION COUNTS
+daily_ohlcv: 4939
+synthetic OHLCV (source_name like synthetic): 0
+fundamental_snapshot: 20
+fundamental_metric: 120
+candidate_evaluation_run: 43
+candidate_criterion_result: 387
+risk_reward_result: 36
+broker_recommendation: 5
+trade_journal: 0
+
+PHASE 5
+Fingerprint: 146408d7d5de3ce55acd5465d2c788acca9d8e1875c21e1af470151a3f0f97fe
+Config: phase5_trend_screen_v1 / phase5-v1
+Latest candidate status mix: FINAL_CANDIDATE=8, WATCH=4, REJECTED=8, INSUFFICIENT_DATA=0
+FINAL_CANDIDATE meaning: Passes current Phase 5 trend screen (not a guaranteed BUY)
+
+ARCHITECTURE (frozen semantics)
+- Phase 5 = technical/fundamental trend screen
+- Broker consensus = display-only informational evidence
+- Trade Journal = manual execution record (no live prices, no auto-fill)
+- Consensus does not gate Phase 5 classification
+
+FREEZE AUDIT RESULTS (2026-08-20)
+Backend full pytest: 173 passed
+Frontend vitest: 45 passed
+Frontend build: PASS
+Playwright full: 160 passed (disposable DB copy + Vite proxy 127.0.0.1:5176)
+Production data modified during freeze: NO
+Application logic modified during freeze: NO
+
+CORE WORKFLOW STATUS
+Evidence → Plan Trade → PLANNED → OPEN (manual price/date/source) → reload → CLOSE (manual price/date/source) → reload: VERIFIED
+PLANNED → CANCELLED with terminal-state protection: VERIFIED
+Realized P&L from backend only: VERIFIED
+
+KNOWN DEFERRED TECHNICAL DEBT
+- Backend pytest emits Pydantic ConfigDict and datetime.utcnow deprecation warnings
+- Starlette TestClient httpx deprecation warning
+- Stage 7 README still references five-stock ICICI pilot universe (historical; dashboard now API-driven stock count)

@@ -108,6 +108,20 @@ def test_breakout20():
     res2 = TechnicalService.calculate_technical_evidence(data2)
     assert res2['Breakout20_status'] == 'POSITIVE'
 
+def test_sma_golden_rising():
+    data = generate_synthetic_ohlcv(20, start_price=100.0, trend='rising')
+    res = TechnicalService.calculate_technical_evidence(data)
+    # closes 100..119; SMA20 = (100+119)*20/2 / 20 = 109.5
+    assert res['SMA20'] == Decimal('109.50')
+
+
+def test_support_resistance20():
+    data = generate_synthetic_ohlcv(21, start_price=100.0, trend='flat')
+    res = TechnicalService.calculate_technical_evidence(data)
+    assert res['Support20'] == Decimal('99.00')
+    assert res['Resistance20'] == Decimal('101.00')
+
+
 def test_liquidity20():
     data = generate_synthetic_ohlcv(20, start_price=100.0, trend='flat')
     res = TechnicalService.calculate_technical_evidence(data)

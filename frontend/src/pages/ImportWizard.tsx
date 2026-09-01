@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { importsApi } from '../api';
+import BackLink from '../components/BackLink';
 
 export default function ImportWizard() {
   const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview, 4: Summary
@@ -31,7 +32,8 @@ export default function ImportWizard() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
+    <div className="max-w-4xl mx-auto p-4 space-y-4 min-w-0">
+      <BackLink fallback="/data" />
       <h1 className="text-2xl font-bold">Import Recommendations</h1>
       
       {/* Upload Step */}

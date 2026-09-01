@@ -9,7 +9,11 @@ const viewports = [
 ];
 
 const screens = [
-  { name: 'Candidate Dashboard', path: '/', heading: 'Broker Candidate Universe' },
+  { name: 'Home', path: '/', heading: 'does not decide BUY or SELL' },
+  { name: 'Candidates', path: '/final-candidates', heading: 'Candidates' },
+  { name: 'Data hub', path: '/data', heading: 'Maintenance screens for stored market data' },
+  { name: 'Candidate Dashboard', path: '/broker-opinion', heading: 'Broker Opinion Universe' },
+  { name: 'Market Data Status', path: '/market-data', heading: 'Market Data Status' },
   { name: 'Stock Detail', path: '/consensus/4', heading: 'CARYSIL' },
   { name: 'Broker Recommendations', path: '/recommendations', heading: 'Broker Recommendations' },
   { name: 'Manual Recommendation Entry', path: '/recommendations/new', heading: 'New Recommendation' },
@@ -17,6 +21,7 @@ const screens = [
   { name: 'Review Queue', path: '/review', heading: 'Review Queue' },
   { name: 'Master Data', path: '/master', heading: 'Master Data' },
   { name: 'Settings', path: '/settings', heading: 'Settings' },
+  { name: 'Trade Journal', path: '/trades', heading: 'Trade Journal' },
 ];
 
 async function renderedLayoutAudit(page: Page, screenName: string, viewportWidth: number) {
@@ -30,6 +35,7 @@ async function renderedLayoutAudit(page: Page, screenName: string, viewportWidth
     const selector = 'main, nav, form, button, input, select, textarea, a, [role="dialog"]';
     const outside = [...document.querySelectorAll(selector)]
       .filter(visible)
+      .filter((element) => element.closest('nav') === null)
       .map((element) => {
         const rect = element.getBoundingClientRect();
         return {
@@ -109,16 +115,19 @@ for (const viewport of viewports) {
         await page.goto(screen.path);
         await expect(page.getByText(screen.heading, { exact: false }).first()).toBeVisible();
         await expect(page.locator('nav')).toBeVisible();
-        await expect(page.locator('nav a')).toHaveCount(7);
+        await expect(page.locator('nav a')).toHaveCount(4);
 
         if (screen.name === 'Candidate Dashboard') {
-          await expect(page.getByText('5 candidates', { exact: false })).toBeVisible();
+          const api = await page.request.get('/api/consensus/candidates?min_brokers=1');
+          expect(api.ok()).toBeTruthy();
+          const total = (await api.json()).total;
+          await expect(page.getByText(`Transparent broker consensus metrics (${total} stocks)`, { exact: false })).toBeVisible();
           await page.getByRole('button', { name: /Filters & Sort/i }).click();
           await expect(page.getByText('Verification Filter')).toBeVisible();
         }
 
         if (screen.name === 'Stock Detail') {
-          await expect(page.getByText('Current Market Price (CMP)')).toBeVisible();
+          await expect(page.getByText('Broker/consensus CMP')).toBeVisible();
           await expect(page.getByText('N/A').first()).toBeVisible();
           await page.getByTitle('Toggle Evidence Sources').click();
           const evidenceLink = page.getByRole('link', { name: /View Link/i });

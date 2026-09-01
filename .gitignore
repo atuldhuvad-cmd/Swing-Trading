@@ -75,6 +75,10 @@ manual_inputs/
 frontend/test-results/
 playwright-report/
 
+# One-time evidence extraction artefacts (keep reusable scratch scripts tracked)
+scratch/pdf_renders/
+scratch/_*.txt
+
 # Database backups
 data/backups/
 *.sqlite

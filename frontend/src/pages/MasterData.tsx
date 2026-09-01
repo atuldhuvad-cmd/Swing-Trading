@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
+import BackLink from '../components/BackLink';
 
 export default function MasterData() {
   const [stocks, setStocks] = useState<any[]>([]);
@@ -24,6 +25,7 @@ export default function MasterData() {
 
   return (
     <div className="space-y-6">
+      <BackLink fallback="/data" />
       <h2 className="text-2xl font-bold">Master Data</h2>
       
       <div>
