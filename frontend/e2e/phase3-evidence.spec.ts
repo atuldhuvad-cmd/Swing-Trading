@@ -102,6 +102,30 @@ test.describe('Phase 5 production evidence UI', () => {
     await expect(page.getByText('RR N/A', { exact: false })).toBeVisible();
   });
 
+  test('Criteria and reasons appear in the same order in list and detail', async ({ page, request }) => {
+    const items = (await (await request.get('/api/evidence/candidates')).json()).items || [];
+    const insufficient = items.filter((row: { status: string }) => row.status === 'INSUFFICIENT_DATA');
+    expect(insufficient.length).toBe(7);
+    for (const row of items) {
+      const detail = await (await request.get(`/api/evidence/stocks/${row.stock_id}`)).json();
+      const names = (rows: Array<{ criterion: string; result: string; reason: string | null }>) =>
+        rows.map((c) => `${c.criterion}|${c.result}|${c.reason}`);
+      expect(detail.candidate.evaluation_id, row.nse_symbol).toBe(row.evaluation_id);
+      expect(names(detail.criteria), row.nse_symbol).toEqual(names(row.criteria));
+      expect(detail.candidate.decisive_reason, row.nse_symbol).toBe(row.decisive_reason);
+    }
+
+    await page.goto('/final-candidates', { waitUntil: 'load' });
+    for (const row of insufficient) {
+      const card = page.getByRole('button', { name: new RegExp(`\\b${row.nse_symbol}\\b`) });
+      await expect(card.getByText(row.decisive_reason, { exact: false })).toBeVisible();
+    }
+    for (const row of insufficient) {
+      await page.goto(`/evidence/${row.stock_id}`, { waitUntil: 'load' });
+      await expect(page.getByText(`Reason: ${row.decisive_reason}`, { exact: false })).toBeVisible();
+    }
+  });
+
   test('Invalid stock shows error state', async ({ page }) => {
     await page.goto('/evidence/999999', { waitUntil: 'load' });
     await expect(page.getByText('Stock not found', { exact: false })).toBeVisible();

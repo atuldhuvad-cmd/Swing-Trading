@@ -76,6 +76,27 @@ class EvidenceService:
         }
 
     @classmethod
+    def criteria_by_evaluation(cls, db: Session, evaluation_ids: List[int]) -> Dict[int, List[CandidateCriterionResult]]:
+        """Criterion rows per evaluation in persisted order (result_id).
+
+        CandidateService writes criteria in configuration order, so this is the
+        rule sequence of the evaluation's own config snapshot. Every endpoint uses
+        this so the same evaluation always lists the same criteria in the same order.
+        """
+        grouped: Dict[int, List[CandidateCriterionResult]] = {}
+        if not evaluation_ids:
+            return grouped
+        rows = (
+            db.query(CandidateCriterionResult)
+            .filter(CandidateCriterionResult.evaluation_id.in_(evaluation_ids))
+            .order_by(CandidateCriterionResult.evaluation_id.asc(), CandidateCriterionResult.result_id.asc())
+            .all()
+        )
+        for row in rows:
+            grouped.setdefault(row.evaluation_id, []).append(row)
+        return grouped
+
+    @classmethod
     def serialize_criterion(cls, row: CandidateCriterionResult) -> Dict[str, Any]:
         return {
             "criterion": row.criterion_identifier,
@@ -137,12 +158,7 @@ class EvidenceService:
         criteria = []
         criterion_rows: List[CandidateCriterionResult] = []
         if run:
-            criterion_rows = (
-                db.query(CandidateCriterionResult)
-                .filter(CandidateCriterionResult.evaluation_id == run.evaluation_id)
-                .order_by(CandidateCriterionResult.criterion_identifier.asc(), CandidateCriterionResult.result_id.asc())
-                .all()
-            )
+            criterion_rows = cls.criteria_by_evaluation(db, [run.evaluation_id]).get(run.evaluation_id, [])
             criteria = [cls.serialize_criterion(r) for r in criterion_rows]
         rr = None
         if run:
@@ -268,16 +284,7 @@ class EvidenceService:
         ) if stock_ids else []
         snap_by_stock = {s.stock_id: s for s in snap_rows}
 
-        crit_by_eval: Dict[int, List[CandidateCriterionResult]] = {}
-        if runs:
-            crit_rows = (
-                db.query(CandidateCriterionResult)
-                .filter(CandidateCriterionResult.evaluation_id.in_([r.evaluation_id for r in runs]))
-                .order_by(CandidateCriterionResult.result_id.asc())
-                .all()
-            )
-            for row in crit_rows:
-                crit_by_eval.setdefault(row.evaluation_id, []).append(row)
+        crit_by_eval = cls.criteria_by_evaluation(db, [r.evaluation_id for r in runs])
         snap_ids = [s.snapshot_id for s in snap_rows]
         revenue_by_snap: Dict[int, FundamentalMetric] = {}
         if snap_ids:
@@ -321,6 +328,7 @@ class EvidenceService:
                 "fundamental_state": fund_state,
                 "revenue": revenue_value,
                 "revenue_status": revenue_status,
+                "criteria": [cls.serialize_criterion(r) for r in rows],
                 "close_gt_sma50": cls.criterion_by_id(rows, "close_gt_sma50"),
                 "sma50_gt_sma200": cls.criterion_by_id(rows, "sma50_gt_sma200"),
                 "entry": jsonable(rr.entry_reference) if rr else None,

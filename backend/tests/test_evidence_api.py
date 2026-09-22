@@ -99,3 +99,62 @@ def test_evidence_consensus(client, db_session):
     assert body["consensus"]["status"] == "CONSENSUS_AVAILABLE"
     assert body["consensus"]["metrics"]["unique_broker_count"] == 1
     assert body["consensus"]["metrics"]["avg_target"] == 500.0
+
+
+def _phase5_insufficient_run(db_session, stock_id):
+    """Mirror a short-history stock: only RSI14/ATR14 known, no fundamentals."""
+    from app.services.candidate_config import PHASE5_TREND_SCREEN_V1
+    tech = {"SMA20": None, "SMA50": None, "SMA200": None, "ATR14": Decimal("61.29"),
+            "latest_close": Decimal("2105.0"), "sessions": 18}
+    return CandidateService.evaluate_candidate(db_session, stock_id, PHASE5_TREND_SCREEN_V1, tech, {})
+
+
+def test_criterion_order_identical_across_list_and_detail(client, db_session):
+    from app.services.candidate_config import PHASE5_TREND_SCREEN_V1
+    stock = db_session.query(StockMaster).filter_by(nse_symbol="RELIANCE").one()
+    run = _phase5_insufficient_run(db_session, stock.stock_id)
+    db_session.commit()
+    assert run.classification == "INSUFFICIENT_DATA"
+
+    config_order = [c["id"] for c in PHASE5_TREND_SCREEN_V1["criteria"]]
+    assert config_order != sorted(config_order)  # alphabetical order would change the rule sequence
+
+    detail = client.get(f"/api/evidence/stocks/{stock.stock_id}").json()
+    listed = next(i for i in client.get("/api/evidence/candidates").json()["items"]
+                  if i["evaluation_id"] == run.evaluation_id)
+    assert detail["candidate"]["evaluation_id"] == run.evaluation_id
+
+    def view(rows):
+        return [(r["criterion"], r["result"], r["reason"], r["evidence_value"], r["operator"], r["threshold"])
+                for r in rows]
+
+    assert [r["criterion"] for r in detail["criteria"]] == config_order
+    assert view(listed["criteria"]) == view(detail["criteria"])
+    assert listed["decisive_reason"] == detail["candidate"]["decisive_reason"]
+    unknown = [c for c in config_order if next(r for r in detail["criteria"] if r["criterion"] == c)["result"] == "UNKNOWN"]
+    assert detail["candidate"]["decisive_reason"] == "Mandatory evidence unavailable: " + ", ".join(unknown)
+    # UNKNOWN is never reported as PASS in either endpoint
+    for rows in (listed["criteria"], detail["criteria"]):
+        assert all(r["evidence_value"] is not None for r in rows if r["result"] == "PASS")
+
+
+def test_historical_evaluation_keeps_its_own_config_order(client, db_session):
+    from app.services.candidate_config import LEGACY_BATCH_A_POST_IMPORT_CONFIG, PHASE5_TREND_SCREEN_V1
+    from app.services.evidence_service import EvidenceService
+    stock = db_session.query(StockMaster).filter_by(nse_symbol="RELIANCE").one()
+    legacy = CandidateService.evaluate_candidate(
+        db_session, stock.stock_id, LEGACY_BATCH_A_POST_IMPORT_CONFIG, {"SMA20": Decimal("1")}, {})
+    latest = _phase5_insufficient_run(db_session, stock.stock_id)
+    db_session.commit()
+
+    grouped = EvidenceService.criteria_by_evaluation(db_session, [latest.evaluation_id, legacy.evaluation_id])
+    legacy_order = [c["id"] for c in LEGACY_BATCH_A_POST_IMPORT_CONFIG["criteria"]]
+    assert legacy_order != sorted(legacy_order)
+    assert [r.criterion_identifier for r in grouped[legacy.evaluation_id]] == legacy_order
+    assert [r.criterion_identifier for r in grouped[latest.evaluation_id]] == [c["id"] for c in PHASE5_TREND_SCREEN_V1["criteria"]]
+
+    # Endpoints expose the latest evaluation; its order is unaffected by the older run.
+    detail = client.get(f"/api/evidence/stocks/{stock.stock_id}").json()
+    listed = next(i for i in client.get("/api/evidence/candidates").json()["items"] if i["stock_id"] == stock.stock_id)
+    assert detail["candidate"]["evaluation_id"] == listed["evaluation_id"] == latest.evaluation_id
+    assert [r["criterion"] for r in detail["criteria"]] == [r["criterion"] for r in listed["criteria"]]
