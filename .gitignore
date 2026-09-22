@@ -73,6 +73,7 @@ manual_inputs/
 
 # Playwright test artefacts
 frontend/test-results/
+frontend/test-results-*/
 playwright-report/
 
 # One-time evidence extraction artefacts (keep reusable scratch scripts tracked)

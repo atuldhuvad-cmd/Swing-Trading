@@ -15,13 +15,17 @@ class RecommendationService:
         return hashlib.sha256(base_string.encode()).hexdigest()
 
     @staticmethod
-    def create_recommendation(db: Session, rec_in: BrokerRecommendationCreate):
+    def _create_recommendation_internal(db: Session, rec_in: BrokerRecommendationCreate) -> BrokerRecommendation:
         """
-        Atomically creates a recommendation and its evidence sources.
+        Adds a recommendation and its evidence sources to the session WITHOUT
+        committing. Caller owns the transaction (commit/rollback) so this can
+        be composed atomically with other writes, e.g. supersede_recommendation.
+        Raises HTTPException(409) on an exact duplicate; other DB errors
+        propagate to the caller uncaught.
         """
         # 1. Create the base recommendation object
         rec_dict = rec_in.model_dump(exclude={'evidence'})
-        
+
         new_rec = BrokerRecommendation(**rec_dict)
         new_rec.fingerprint = RecommendationService._generate_fingerprint(new_rec)
 
@@ -30,34 +34,45 @@ class RecommendationService:
         if existing_rec:
             raise HTTPException(status_code=409, detail=f"Exact recommendation duplicate already exists with ID {existing_rec.recommendation_id}")
 
-        try:
-            db.add(new_rec)
-            db.flush() # Get recommendation_id
-            
-            # 3. Create Status History
-            history = RecommendationStatusHistory(
-                recommendation_id=new_rec.recommendation_id,
-                status=new_rec.lifecycle_status,
-                changed_at=datetime.utcnow(),
-                notes="Initial creation"
-            )
-            db.add(history)
+        db.add(new_rec)
+        db.flush() # Get recommendation_id
 
-            # 4. Attach Evidence Sources
-            for evidence_in in rec_in.evidence:
-                source_ref = SourceReference(**evidence_in.model_dump())
-                db.add(source_ref)
-                db.flush() # Get source_reference_id
-                
-                rec_source = RecommendationSource(
-                    recommendation_id=new_rec.recommendation_id,
-                    source_reference_id=source_ref.source_reference_id
-                )
-                db.add(rec_source)
-            
+        # 3. Create Status History
+        history = RecommendationStatusHistory(
+            recommendation_id=new_rec.recommendation_id,
+            status=new_rec.lifecycle_status,
+            changed_at=datetime.utcnow(),
+            notes="Initial creation"
+        )
+        db.add(history)
+
+        # 4. Attach Evidence Sources
+        for evidence_in in rec_in.evidence:
+            source_ref = SourceReference(**evidence_in.model_dump())
+            db.add(source_ref)
+            db.flush() # Get source_reference_id
+
+            rec_source = RecommendationSource(
+                recommendation_id=new_rec.recommendation_id,
+                source_reference_id=source_ref.source_reference_id
+            )
+            db.add(rec_source)
+
+        return new_rec
+
+    @staticmethod
+    def create_recommendation(db: Session, rec_in: BrokerRecommendationCreate):
+        """
+        Atomically creates a recommendation and its evidence sources.
+        """
+        try:
+            new_rec = RecommendationService._create_recommendation_internal(db, rec_in)
             db.commit()
             db.refresh(new_rec)
             return new_rec
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=422, detail=f"Failed to create recommendation: {str(e)}")
@@ -76,8 +91,10 @@ class RecommendationService:
             raise HTTPException(status_code=422, detail="Superseding recommendation must belong to the same broker and stock")
 
         try:
-            # Create new recommendation
-            new_rec = RecommendationService.create_recommendation(db, new_rec_in)
+            # Create the new recommendation on the SAME transaction (no intermediate
+            # commit) so a failure below rolls back the new recommendation too,
+            # instead of leaving it committed while the old one stays CURRENT.
+            new_rec = RecommendationService._create_recommendation_internal(db, new_rec_in)
             
             # Update old recommendation
             old_rec.lifecycle_status = "SUPERSEDED"

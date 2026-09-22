@@ -10,3 +10,110 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ---- Dark mode: follows the device/browser color-scheme automatically,
+   no in-app toggle. Tailwind v4's `dark:` variant already does this out of
+   the box (media query, not class-based) -- but the app's pages were all
+   written with plain light-theme utility classes (bg-white, text-gray-900,
+   etc.) rather than dark: variants throughout every file. Re-theming every
+   page individually would be a much larger change for the same visual
+   result, so instead this overrides the actual Tailwind utility classes
+   used across the app (audited via a full grep of the frontend source) directly,
+   scoped to prefers-color-scheme: dark. Unlayered rules like these already
+   win over Tailwind's @layer utilities regardless of order, but !important
+   is added for certainty. If a new page introduces a color utility class
+   not listed here, it will just stay light-themed until added below. */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #0f172a;
+    color: #e2e8f0;
+  }
+
+  /* Surfaces */
+  .bg-white { background-color: #1e293b !important; }
+  .bg-gray-50 { background-color: #0f172a !important; }
+  .bg-gray-100 { background-color: #273449 !important; }
+  .bg-gray-200 { background-color: #334155 !important; }
+  .bg-gray-300 { background-color: #475569 !important; }
+  .bg-gray-700 { background-color: #1e293b !important; }
+  .bg-gray-800 { background-color: #0f172a !important; }
+
+  /* Borders / dividers */
+  .border-gray-100 { border-color: #1e293b !important; }
+  .border-gray-200 { border-color: #334155 !important; }
+  .border-gray-300 { border-color: #475569 !important; }
+  .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155 !important; }
+
+  /* Body text tiers */
+  .text-gray-900 { color: #f1f5f9 !important; }
+  .text-gray-800 { color: #e2e8f0 !important; }
+  .text-gray-700 { color: #cbd5e1 !important; }
+  .text-gray-600 { color: #94a3b8 !important; }
+  .text-gray-500 { color: #94a3b8 !important; }
+  .text-gray-400 { color: #64748b !important; }
+
+  /* Blue (links, info, primary accents) */
+  .bg-blue-50 { background-color: #0c2745 !important; }
+  .bg-blue-100 { background-color: #0f2f52 !important; }
+  .border-blue-100 { border-color: #1e3a5f !important; }
+  .border-blue-200 { border-color: #1e3a5f !important; }
+  .border-blue-300 { border-color: #2d4a73 !important; }
+  .text-blue-400 { color: #7db8f0 !important; }
+  .text-blue-500 { color: #6ba8e8 !important; }
+  .text-blue-600 { color: #5b9be0 !important; }
+  .text-blue-700 { color: #7db8f0 !important; }
+  .text-blue-800 { color: #93c5fd !important; }
+  .text-blue-900 { color: #bfdbfe !important; }
+  .ring-blue-500 { --tw-ring-color: #5b9be0 !important; }
+
+  /* Red (errors) */
+  .bg-red-50 { background-color: #3a0d0d !important; }
+  .bg-red-100 { background-color: #4a1212 !important; }
+  .border-red-100 { border-color: #5c1a1a !important; }
+  .border-red-200 { border-color: #5c1a1a !important; }
+  .border-red-300 { border-color: #7a2222 !important; }
+  .text-red-400 { color: #f39a9a !important; }
+  .text-red-500 { color: #f08080 !important; }
+  .text-red-600 { color: #ec7373 !important; }
+  .text-red-700 { color: #f39a9a !important; }
+  .text-red-800 { color: #fbc9c9 !important; }
+  .text-red-900 { color: #fde0e0 !important; }
+
+  /* Green (success) */
+  .bg-green-50 { background-color: #0d2b18 !important; }
+  .bg-green-100 { background-color: #123a20 !important; }
+  .border-green-200 { border-color: #1c4d2c !important; }
+  .border-green-300 { border-color: #256339 !important; }
+  .text-green-500 { color: #6ed597 !important; }
+  .text-green-600 { color: #5cc788 !important; }
+  .text-green-700 { color: #86dda9 !important; }
+  .text-green-800 { color: #b0ecc7 !important; }
+
+  /* Amber / Yellow (warnings) */
+  .bg-amber-50 { background-color: #3a2a0d !important; }
+  .border-amber-200 { border-color: #5c4319 !important; }
+  .text-amber-700 { color: #f0c674 !important; }
+  .text-amber-800 { color: #f5d999 !important; }
+  .text-amber-900 { color: #fae8bf !important; }
+  .bg-yellow-50 { background-color: #3a2f0d !important; }
+  .bg-yellow-100 { background-color: #4a3d12 !important; }
+  .border-yellow-200 { border-color: #5c4d19 !important; }
+  .text-yellow-600 { color: #e0c15c !important; }
+  .text-yellow-700 { color: #f0d485 !important; }
+  .text-yellow-800 { color: #f5e2a8 !important; }
+
+  /* Purple */
+  .bg-purple-50 { background-color: #251236 !important; }
+  .border-purple-200 { border-color: #3d1f57 !important; }
+  .text-purple-700 { color: #c9a4e8 !important; }
+
+  /* Primary action buttons keep their saturated colors (already readable
+     in both themes) but get a touch darker on hover-equivalent tones for
+     less glare on a dark page. */
+  .bg-blue-600 { background-color: #2563eb !important; }
+  .bg-blue-700 { background-color: #1d4ed8 !important; }
+  .bg-red-600 { background-color: #dc2626 !important; }
+  .bg-red-700 { background-color: #b91c1c !important; }
+  .bg-green-600 { background-color: #16a34a !important; }
+  .bg-green-700 { background-color: #15803d !important; }
+}

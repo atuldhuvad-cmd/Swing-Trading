@@ -154,13 +154,6 @@ test.describe('Phase 5 Batch B evidence UI', () => {
     }>;
     const bySym = Object.fromEntries(items.map((row) => [row.nse_symbol, row]));
 
-    const examples: Record<string, { close: string; sma50: string; sma200?: string }> = {
-      CIPLA: { close: '1458.8', sma50: '1429.57', sma200: '1402.83' },
-      COALINDIA: { close: '410.5', sma50: '433.72' },
-      HCLTECH: { close: '1370.0', sma50: '1208.39', sma200: '1409.02' },
-      HDFCLIFE: { close: '538.05', sma50: '562.8', sma200: '659.74' },
-    };
-
     for (const symbol of Object.keys(BATCH_B)) {
       const row = bySym[symbol];
       const detail = await (await request.get(`/api/evidence/stocks/${row.stock_id}`)).json();
@@ -172,11 +165,10 @@ test.describe('Phase 5 Batch B evidence UI', () => {
       await expect(page.getByText('close > SMA50').first()).toBeVisible();
       await expect(page.getByText('SMA50 > SMA200').first()).toBeVisible();
       await expect(page.getByText(detail.candidate.decisive_reason, { exact: false }).first()).toBeVisible();
-      const ex = examples[symbol];
-      if (ex) {
-        await expect(page.getByText(ex.close, { exact: false }).first()).toBeVisible();
-        await expect(page.getByText(ex.sma50, { exact: false }).first()).toBeVisible();
-        if (ex.sma200) await expect(page.getByText(ex.sma200, { exact: false }).first()).toBeVisible();
+      for (const metric of ['SMA50', 'SMA200']) {
+        const value = detail.technical.indicators[metric];
+        expect(value).not.toBeNull();
+        await expect(page.getByText(String(value), { exact: false }).first()).toBeVisible();
       }
       if (symbol in RR_PREFIX) {
         await expect(page.getByText(RR_PREFIX[symbol], { exact: false }).first()).toBeVisible();
@@ -206,7 +198,7 @@ test.describe('Phase 5 Batch B evidence UI', () => {
     expect(mainText.replace(INSURANCE_LINE, '')).not.toMatch(/\bTotal Income\b/);
   });
 
-  test('Market data shows Batch B 247 sessions and SMA200 ready', async ({ page, request }) => {
+  test('Market data preserves Batch B history and matches current API coverage', async ({ page, request }) => {
     const market = ((await (await request.get('/api/evidence/market-data')).json()).items || []) as Array<{
       nse_symbol: string;
       session_count: number;
@@ -215,23 +207,25 @@ test.describe('Phase 5 Batch B evidence UI', () => {
     }>;
     for (const symbol of Object.keys(BATCH_B)) {
       const row = market.find((item) => item.nse_symbol === symbol);
-      expect(row?.session_count).toBe(247);
+      expect(row?.session_count).toBeGreaterThanOrEqual(247);
       expect(row?.sma200_ready).toBeTruthy();
-      expect(String(row?.latest_trading_date || '').slice(0, 10)).toBe('2026-08-13');
+      expect(String(row?.latest_trading_date || '').slice(0, 10) >= '2026-08-13').toBe(true);
     }
     const bharti = market.find((item) => item.nse_symbol === 'BHARTIARTL');
-    expect(bharti?.session_count).toBe(246);
-    expect(String(bharti?.latest_trading_date || '').slice(0, 10)).toBe('2026-08-12');
+    expect(bharti?.session_count).toBeGreaterThanOrEqual(246);
+    expect(String(bharti?.latest_trading_date || '').slice(0, 10) >= '2026-08-12').toBe(true);
 
     await page.goto('/market-data', { waitUntil: 'load' });
     await expect(page.getByText('Market Data Status')).toBeVisible();
     for (const symbol of Object.keys(BATCH_B)) {
       await expect(page.getByText(symbol, { exact: true }).first()).toBeVisible();
+      const current = market.find((item) => item.nse_symbol === symbol)!;
+      const card = page.getByText(symbol, { exact: true }).locator('..');
+      await expect(card.getByText('Session count', { exact: true }).locator('..')).toHaveText(`Session count${current.session_count}`);
+      await expect(card.getByText('Latest trading date', { exact: true }).locator('..')).toHaveText(`Latest trading date${String(current.latest_trading_date).slice(0, 10)}`);
     }
     await expect(page.getByText('ADANIENT')).toBeVisible();
-    await expect(page.getByText('247').first()).toBeVisible();
     await expect(page.getByText('YES').first()).toBeVisible();
-    await expect(page.getByText('2026-08-13').first()).toBeVisible();
   });
 });
 

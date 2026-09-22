@@ -129,6 +129,12 @@ for (const viewport of viewports) {
         if (screen.name === 'Stock Detail') {
           await expect(page.getByText('Broker/consensus CMP')).toBeVisible();
           await expect(page.getByText('N/A').first()).toBeVisible();
+          const response = await page.request.get('/api/consensus/stocks/4');
+          expect(response.ok()).toBeTruthy();
+          const consensus = await response.json();
+          if (consensus.contributors.length === 0) {
+            await expect(page.getByText('No active broker recommendations found for this stock.')).toBeVisible();
+          } else {
           await page.getByTitle('Toggle Evidence Sources').click();
           const evidenceLink = page.getByRole('link', { name: /View Link/i });
           await expect(evidenceLink).toBeVisible();
@@ -141,6 +147,7 @@ for (const viewport of viewports) {
           expect(['anywhere', 'break-word', 'break-all']).toContain(
             wrapping.wordBreak === 'break-all' ? 'break-all' : wrapping.overflowWrap,
           );
+          }
         }
 
         if (screen.name === 'Broker Recommendations') {

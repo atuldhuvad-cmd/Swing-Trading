@@ -27,6 +27,7 @@ class ColumnMapping(BaseModel):
     currency: Optional[str] = None
     stream_name: Optional[str] = None
     source_type: Optional[str] = None
+    default_source_type: Optional[str] = None  # applied to every row when no source_type column is mapped
     source_name: Optional[str] = None
     source_url: Optional[str] = None
     source_date: Optional[str] = None

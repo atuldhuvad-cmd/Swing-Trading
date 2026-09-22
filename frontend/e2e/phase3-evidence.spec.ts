@@ -98,12 +98,18 @@ test.describe('Phase 5 production evidence UI', () => {
     await expect(page.getByText('Stock not found', { exact: false })).toBeVisible();
   });
 
-  test('Market data shows Batch A sessions and SMA200 ready', async ({ page }) => {
+  test('Market data shows Batch A sessions and SMA200 ready', async ({ page, request }) => {
+    const response = await request.get('/api/evidence/market-data');
+    expect(response.ok()).toBeTruthy();
+    const row = (await response.json()).items.find((item: { nse_symbol: string }) => item.nse_symbol === 'ADANIENT');
+    expect(row.session_count).toBeGreaterThanOrEqual(247);
+    expect(row.sma200_ready).toBe(true);
     await page.goto('/market-data', { waitUntil: 'load' });
     await expect(page.getByText('Market Data Status')).toBeVisible();
     await expect(page.getByText('ADANIENT')).toBeVisible();
-    await expect(page.getByText('247').first()).toBeVisible();
+    const card = page.getByText('ADANIENT', { exact: true }).locator('..');
+    await expect(card.getByText('Session count', { exact: true }).locator('..')).toHaveText(`Session count${row.session_count}`);
     await expect(page.getByText('YES').first()).toBeVisible();
-    await expect(page.getByText('2026-08-13').first()).toBeVisible();
+    await expect(card.getByText('Latest trading date', { exact: true }).locator('..')).toHaveText(`Latest trading date${String(row.latest_trading_date).slice(0, 10)}`);
   });
 });

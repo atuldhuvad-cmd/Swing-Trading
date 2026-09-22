@@ -72,6 +72,26 @@ export const fundamentalsApi = {
   confirm: (payload: any) => api.post('/fundamentals/confirm', payload).then(res => res.data),
 };
 
+export const dataSyncApi = {
+  getJobs: () => api.get('/data-sync/jobs').then(res => res.data),
+  runJob: (jobId: string, confirmProduction = false) => api.post(`/data-sync/jobs/${jobId}/run`, { confirm_production: confirmProduction }).then(res => res.data),
+};
+
+export const brokerUploadsApi = {
+  list: () => api.get('/broker-uploads').then(res => res.data),
+  upload: (file: File, brokerName: string, stockSymbol?: string, note?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('broker_name', brokerName);
+    if (stockSymbol) formData.append('stock_symbol', stockSymbol);
+    if (note) formData.append('note', note);
+    return api.post('/broker-uploads', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }).then(res => res.data);
+  },
+  fileUrl: (uploadId: string) => `/api/broker-uploads/${uploadId}/file`,
+};
+
 export default api;
 
 export const tradesApi = {

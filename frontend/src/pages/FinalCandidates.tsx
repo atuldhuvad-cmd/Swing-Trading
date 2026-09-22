@@ -37,6 +37,7 @@ interface CandidateRow {
 }
 
 const STATUS_ORDER = ['FINAL_CANDIDATE', 'WATCH', 'REJECTED', 'INSUFFICIENT_DATA'] as const;
+const STATUS_RANK: Record<string, number> = Object.fromEntries(STATUS_ORDER.map((s, i) => [s, i]));
 
 export default function FinalCandidates() {
   const navigate = useNavigate();
@@ -92,7 +93,17 @@ export default function FinalCandidates() {
       )}
 
       <div className="grid grid-cols-1 gap-3">
-        {items.map((c) => (
+        {[...items]
+          .sort((a, b) => {
+            // Sort by recommendation strength (FINAL_CANDIDATE first, matching
+            // the legend order above), not alphabetically by symbol. Unknown
+            // statuses sort last; symbol is only a tiebreaker within a status.
+            const rankA = STATUS_RANK[a.status] ?? STATUS_ORDER.length;
+            const rankB = STATUS_RANK[b.status] ?? STATUS_ORDER.length;
+            if (rankA !== rankB) return rankA - rankB;
+            return a.nse_symbol.localeCompare(b.nse_symbol);
+          })
+          .map((c) => (
           <button
             key={c.stock_id}
             type="button"

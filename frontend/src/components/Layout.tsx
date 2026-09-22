@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 const DATA_PATHS = [
   '/data',
   '/market-data',
+  '/data-sync',
   '/fundamentals',
   '/recommendations',
   '/imports',
@@ -13,6 +14,7 @@ const DATA_PATHS = [
   '/settings',
   '/source-readiness',
   '/broker-opinion',
+  '/broker-uploads',
   '/consensus',
 ];
 
@@ -34,7 +36,7 @@ export default function Layout() {
     return (
       <Link
         to={to}
-        className={`flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 ${active ? 'text-blue-600 font-bold' : 'text-gray-500'}`}
+        className={`flex flex-col items-center justify-center min-w-[52px] min-h-[48px] px-3 py-1 rounded-xl transition-colors ${active ? 'text-blue-600 dark:text-blue-400 font-bold bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}
       >
         {icon}
         <span className="text-[10px] sm:text-xs mt-0.5 text-center">{label}</span>
@@ -54,8 +56,8 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      <nav className="fixed bottom-0 w-full bg-white border-t border-gray-200">
-        <div className="max-w-4xl mx-auto flex justify-around px-1 py-1">
+      <nav className="fixed bottom-0 w-full bg-white border-t-2 border-gray-300 shadow-[0_-4px_14px_rgba(0,0,0,0.12)] z-20">
+        <div className="max-w-4xl mx-auto flex justify-around px-1 py-1.5">
           {item('/', 'Home', <Home size={22} />)}
           {item('/final-candidates', 'Candidates', <ShieldCheck size={22} />)}
           {item('/trades', 'Journal', <BookOpen size={22} />)}

@@ -31,6 +31,7 @@ export default function DataHub() {
 
       <Group title="Market Data">
         <Item to="/market-data" label="Market data status" hint="Stored OHLCV coverage and SMA200 readiness. No live-price upload in this screen." />
+        <Item to="/data-sync" label="Data sync" hint="Run the auto-download scripts (OHLCV/Bhavcopy, fundamentals, ICICI recs) and see their reports." />
       </Group>
 
       <Group title="Fundamentals">
@@ -39,6 +40,7 @@ export default function DataHub() {
 
       <Group title="Broker Reports">
         <Item to="/recommendations/new" label="Enter a recommendation" hint="Type facts from a report you already have." />
+        <Item to="/broker-uploads" label="Upload broker PDF" hint="Save a PDF report from Motilal Oswal, HDFC Securities, 5paisa, or any other brokerage here." />
         <Item to="/imports/new" label="CSV / XLSX import" hint="Upload a structured file, map columns, preview, then confirm." />
         <Item to="/review" label="Review queue" hint="Resolve import rows that need a human check." />
         <Item to="/imports/history" label="Import history" hint="Past recommendation batches." />

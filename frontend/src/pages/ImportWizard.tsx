@@ -52,7 +52,7 @@ export default function ImportWizard() {
         <div className="border p-4 rounded bg-white shadow-sm space-y-4">
           <h2 className="text-lg font-semibold">Step 2: Map Columns</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {['nse_symbol', 'broker_name', 'recommendation_date', 'original_rating', 'recommended_price', 'target_price'].map(field => (
+            {['nse_symbol', 'broker_name', 'recommendation_date', 'original_rating', 'recommended_price', 'target_price', 'source_name', 'source_url'].map(field => (
               <div key={field}>
                 <label className="block text-sm font-medium">{field}</label>
                 <select 
@@ -65,6 +65,25 @@ export default function ImportWizard() {
                 </select>
               </div>
             ))}
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Source type for this whole file</label>
+            <select
+              className="w-full border rounded p-2"
+              value={mapping.default_source_type || ''}
+              onChange={(e) => setMapping({ ...mapping, default_source_type: e.target.value })}
+            >
+              <option value="">-- Select (required if no "source_type" column) --</option>
+              <option value="BROKER_WEBSITE">Broker's own website</option>
+              <option value="BROKER_RESEARCH">Full broker research report / PDF</option>
+              <option value="REPUTABLE_PUBLICATION">Mainstream financial news</option>
+              <option value="SECONDARY_WEBSITE">Secondary site reprinting a call (e.g. this file)</option>
+              <option value="AGGREGATOR">Data aggregator platform</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Applies to every row in this file unless a "source_type" column is mapped above.
+              Rows entered this way are saved as provisional, not verified.
+            </p>
           </div>
           <button onClick={handleMap} className="bg-blue-600 text-white px-4 py-2 rounded mt-4">
             Process Mapping

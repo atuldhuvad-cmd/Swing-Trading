@@ -9,7 +9,8 @@ import json
 from app.models import (
     ImportBatch, ImportBatchDetail, ReviewQueue, 
     StockMaster, BrokerMaster, BrokerAlias, RatingNormalization,
-    BrokerRecommendation, SourceReference, RecommendationSource
+    BrokerRecommendation, SourceReference, RecommendationSource,
+    SourceTypeMaster
 )
 from app.schemas.import_batch import ColumnMapping, ParsedImportRow
 
@@ -77,10 +78,18 @@ class ImportService:
         if not val_str:
             return None
         
+        # Some sources (e.g. a compiled "current calls" page) report a row
+        # as being current as of today rather than giving a specific date.
+        # Treat these known placeholders as today's date instead of
+        # rejecting the row outright.
+        if val_str.lower() in ('current note', 'current', 'today', 'as of today'):
+            return datetime.utcnow()
+
         # Try common formats
         formats = [
             '%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y',
-            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'
+            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S',
+            '%d %b %Y', '%d %B %Y',
         ]
         for fmt in formats:
             try:
@@ -187,11 +196,35 @@ class ImportService:
         # 6. Source
         mapped['source_name'] = ImportService._normalize_string(get_val('source_name'))
         mapped['source_url'] = ImportService._normalize_string(get_val('source_url'))
-        
-        # Source Type resolution
+
+        source_date_raw = ImportService._parse_date(get_val('source_date'))
+        mapped['source_date'] = (
+            source_date_raw.isoformat() if source_date_raw else mapped.get('recommendation_date')
+        )
+
+        original_text = ImportService._normalize_string(get_val('original_text'))
+        if not original_text:
+            # No free-text column in the file -- synthesize a short, factual
+            # summary from the row itself so the evidence trail isn't empty.
+            summary_bits = [mapped.get('broker_name') or broker_name_raw, orig_rating]
+            if mapped.get('target_price'):
+                summary_bits.append(f"target Rs {mapped['target_price']}")
+            if mapped.get('recommended_price'):
+                summary_bits.append(f"CMP Rs {mapped['recommended_price']}")
+            if mapped.get('source_name'):
+                summary_bits.append(f"via {mapped['source_name']}")
+            original_text = f"{nse_symbol}: " + ", ".join(str(b) for b in summary_bits if b)
+        mapped['original_text'] = original_text
+
+        # Source Type resolution -- a per-row column takes priority; if the
+        # file doesn't have one (e.g. a compiled file that is entirely one
+        # kind of source), fall back to the batch-level default supplied in
+        # the mapping.
         source_type_raw = ImportService._normalize_string(get_val('source_type'))
+        if not source_type_raw:
+            source_type_raw = ImportService._normalize_string(getattr(mapping, 'default_source_type', None))
         if source_type_raw:
-            st_master = db.query(__import__('app.models').models.SourceTypeMaster).filter(__import__('app.models').models.SourceTypeMaster.type_name.ilike(source_type_raw)).first()
+            st_master = db.query(SourceTypeMaster).filter(SourceTypeMaster.type_name.ilike(source_type_raw)).first()
             if st_master:
                 mapped['source_type_id'] = st_master.source_type_id
             else:
@@ -287,12 +320,24 @@ class ImportService:
                 
             if d.action == 'UNIQUE':
                 mapped = json.loads(d.mapped_data)
-                
+
+                if not mapped.get('source_type_id'):
+                    # Defensive: normalize_row should already have routed
+                    # this to REVIEW_REQUIRED, but never insert a
+                    # SourceReference with no source type -- the column is
+                    # NOT NULL and would crash the whole confirm.
+                    d.status = 'REJECTED'
+                    d.error_message = 'Missing source type -- cannot create evidence record'
+                    batch.rejected_rows += 1
+                    continue
+
                 # Create source
                 src = SourceReference(
                     source_type_id=mapped.get('source_type_id'),
                     publication_name=mapped.get('source_name'),
                     url=mapped.get('source_url'),
+                    source_date=datetime.fromisoformat(mapped['source_date']) if mapped.get('source_date') else None,
+                    original_text=mapped.get('original_text'),
                     verification_status=mapped.get('verification_status', 'PROVISIONAL'),
                     import_batch_id=batch_id
                 )
@@ -328,10 +373,19 @@ class ImportService:
                 
             elif d.action == 'ATTACH_SOURCE':
                 mapped = json.loads(d.mapped_data)
+
+                if not mapped.get('source_type_id'):
+                    d.status = 'REJECTED'
+                    d.error_message = 'Missing source type -- cannot create evidence record'
+                    batch.rejected_rows += 1
+                    continue
+
                 src = SourceReference(
                     source_type_id=mapped.get('source_type_id'),
                     publication_name=mapped.get('source_name'),
                     url=mapped.get('source_url'),
+                    source_date=datetime.fromisoformat(mapped['source_date']) if mapped.get('source_date') else None,
+                    original_text=mapped.get('original_text'),
                     verification_status=mapped.get('verification_status', 'PROVISIONAL'),
                     import_batch_id=batch_id
                 )
