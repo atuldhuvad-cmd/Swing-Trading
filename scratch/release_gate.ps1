@@ -25,7 +25,10 @@
 param(
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 5173,
-    [switch]$PlaywrightOnly
+    [switch]$PlaywrightOnly,
+    # Tests intentionally skipped by the full suite: the 7 trade-lifecycle
+    # write flows, which only run when TRADE_LIFECYCLE_E2E=1.
+    [int]$ExpectedFullSuiteSkips = 7
 )
 
 Set-StrictMode -Version 2.0
@@ -43,6 +46,7 @@ $LogDir   = Join-Path $Root 'scratch\logs'
 $Log      = Join-Path $LogDir "release_gate_$Stamp.log"
 $GateDb   = Join-Path ([System.IO.Path]::GetFullPath($env:TEMP)) "swing_trading_release_gate_$Stamp.db"
 $Results  = [ordered]@{}
+$script:LastOutput = New-Object System.Collections.Generic.List[string]
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
@@ -58,9 +62,11 @@ function Invoke-Logged([string]$Label, [string]$Exe, [string[]]$Arguments, [stri
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     Push-Location -LiteralPath $Dir
+    $script:LastOutput = New-Object System.Collections.Generic.List[string]
     try {
         & $Exe @Arguments 2>&1 | ForEach-Object {
             $s = "$_"
+            $script:LastOutput.Add($s)
             Write-Host $s
             Add-Content -Path $Log -Value $s -Encoding UTF8
         }
@@ -72,6 +78,34 @@ function Invoke-Logged([string]$Label, [string]$Exe, [string[]]$Arguments, [stri
     $Results[$Label] = if ($code -eq 0) { 'PASS' } else { "FAIL (exit $code)" }
     Write-Log "EXIT $Label = $code"
     return $code
+}
+
+function Get-PlaywrightCount([string[]]$Lines, [string]$Pattern) {
+    $m = @($Lines | ForEach-Object { [regex]::Match($_, $Pattern) } | Where-Object { $_.Success } | Select-Object -Last 1)
+    if ($m.Count -eq 0) { return 0 }
+    return [int]$m[0].Groups[1].Value
+}
+
+# Playwright exits 0 even when tests are skipped, so the exit code alone cannot
+# prove a complete run. Require: a declared total, every test accounted for as
+# passed or skipped, no failed/flaky/interrupted/did-not-run tests, and exactly
+# the expected number of intentional skips.
+function Invoke-Playwright([string]$Label, [string[]]$Arguments, [int]$ExpectedSkipped) {
+    $Results[$Label] = 'NOT COMPLETED'
+    $code = Invoke-Logged $Label 'npx.cmd' $Arguments $Frontend
+    $lines = @($script:LastOutput)
+    $total       = Get-PlaywrightCount $lines '^\s*Running (\d+) tests?\b'
+    $passed      = Get-PlaywrightCount $lines '^\s*(\d+) passed\b'
+    $skipped     = Get-PlaywrightCount $lines '^\s*(\d+) skipped\b'
+    $failed      = Get-PlaywrightCount $lines '^\s*(\d+) failed\b'
+    $flaky       = Get-PlaywrightCount $lines '^\s*(\d+) flaky\b'
+    $interrupted = Get-PlaywrightCount $lines '^\s*(\d+) interrupted\b'
+    $didNotRun   = Get-PlaywrightCount $lines '^\s*(\d+) did not run\b'
+    $summary = "total=$total passed=$passed skipped=$skipped (expected $ExpectedSkipped) failed=$failed flaky=$flaky interrupted=$interrupted didNotRun=$didNotRun exit=$code"
+    $ok = ($code -eq 0) -and ($total -gt 0) -and ($passed + $skipped -eq $total) -and
+          ($skipped -eq $ExpectedSkipped) -and ($failed + $flaky + $interrupted + $didNotRun -eq 0)
+    $Results[$Label] = if ($ok) { "PASS ($passed passed, $skipped skipped of $total)" } else { "FAIL ($summary)" }
+    Write-Log "$Label result: $summary"
 }
 
 function Test-PortBusy([int]$Port) {
@@ -135,6 +169,9 @@ try {
         if ((Invoke-Logged 'gate-db-backup' $Py @($Helper, 'backup', '--dest', $GateDb, '--out', ($GateDb + '.check.json')) $Root) -ne 0) { throw 'Disposable gate database copy failed' }
         $env:DATABASE_URL = 'sqlite:///' + $GateDb.Replace('\', '/')
         Write-Log "Backend DATABASE_URL (process only): $env:DATABASE_URL"
+        if ((Invoke-Logged 'gate-db-resolves-to-disposable-copy' $Py @($Helper, 'resolve-db', '--expect', $GateDb, '--out', ($GateDb + '.resolve.json')) $Backend) -ne 0) {
+            throw 'Backend database does not resolve to the disposable copy'
+        }
         $be = Start-Process -FilePath $Py -WorkingDirectory $Backend -PassThru -NoNewWindow `
             -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', "$BackendPort") `
             -RedirectStandardOutput (Join-Path $LogDir "release_gate_$Stamp`_backend.out.log") `
@@ -159,9 +196,12 @@ try {
 
         $env:STAGE8_BASE_URL = "http://127.0.0.1:$FrontendPort"
         if (-not $PlaywrightOnly) {
-            [void](Invoke-Logged 'playwright-data-tools (Data Sync, Broker Uploads, 320-1024px, console/network)' 'npx.cmd' @('playwright', 'test', 'e2e/post-phase5-data-tools.spec.ts') $Frontend)
+            Invoke-Playwright 'playwright-data-tools (Data Sync, Broker Uploads, 320-1024px, console/network)' @('playwright', 'test', 'e2e/post-phase5-data-tools.spec.ts') 0
         }
-        [void](Invoke-Logged 'playwright-full-suite' 'npm.cmd' @('run', 'test:e2e') $Frontend)
+        # Same command as `npm run test:e2e` (playwright test), invoked directly so
+        # its summary lines can be verified.
+        $fullSkips = if ($env:TRADE_LIFECYCLE_E2E) { 0 } else { $ExpectedFullSuiteSkips }
+        Invoke-Playwright 'playwright-full-suite' @('playwright', 'test') $fullSkips
     }
     $exitCode = 0
 } catch {

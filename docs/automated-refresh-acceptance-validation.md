@@ -57,3 +57,27 @@ Evidence: `manual_inputs/nse/auto/acceptance/20260922_135949` (git-ignored). All
 - **Production not changed:** the catch-up was not imported into production, and no candidate evaluation, recommendation or fundamental was changed. No scheduled task was registered.
 
 A production catch-up import needs a separate explicit authorization, using `--confirm-production`.
+
+## Stricter release gate rerun (commit after 2d5e466)
+
+`scratch/release_gate.ps1` now checks the Playwright summary lines, not just the exit code. A Playwright step passes only if:
+
+- the exit code is 0;
+- every declared test either passed or was skipped;
+- no test failed, was flaky, was interrupted or did not run;
+- the number of skips matches the expected count: 7 for the full suite (0 when `TRADE_LIFECYCLE_E2E` is set), 0 for the data-tools spec.
+
+A step that never finishes stays `NOT COMPLETED`, which fails the gate. Before the backend starts, the gate also checks that the application database resolves to the disposable copy.
+
+Full Windows run, 2026-09-22 (`scratch/logs/release_gate_20260922_142812.log`, OVERALL: PASS):
+
+- **Backend:** 196 passed.
+- **Frontend unit tests:** 51 passed. The jsdom `AxiosError: Network Error` stderr lines come from page tests that have no backend; none of those tests failed.
+- **Lint:** PASS, with the five existing warnings.
+- **Build:** PASS.
+- **Disposable database:** copy created, and the application resolves to it.
+- **Live checks:** `/health`, Data Sync and Broker Uploads APIs and pages all PASS.
+- **Data-tools spec:** 7 passed, 0 skipped of 7.
+- **Full Playwright suite:** 195 passed, 7 skipped of 202. It ran to completion, with no failed, flaky, interrupted or did-not-run tests.
+- **Backend responses:** only 200s, plus the suite's intentional `/api/evidence/stocks/999999` 404 checks. There were no 5xx responses.
+- **Production:** SHA-256 was `eb0e2eaf4fe40db4e3dd2c43f90fb7ec43a0370fcaa6645f923b5bf1322de49e` at start and end. Integrity is `ok` with 0 foreign-key violations, and the data was not imported or modified.
