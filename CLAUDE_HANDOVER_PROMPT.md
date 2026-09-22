@@ -41,20 +41,33 @@ Production database:
 
 `D:\Swing Trading\data\swing_trading.db`
 
-Verified on 2026-09-22:
+Verified on 2026-09-22, after the controlled production OHLCV catch-up:
 
-- `daily_ohlcv`: 5095
+- SHA-256: `fd78dda7e8d4f8a27fafdbd878e3a1dc329de44860659104ffad0e321522f5b5`
+- `daily_ohlcv`: 5419
 - `fundamental_snapshot`: 20
 - `candidate_evaluation_run`: 43
 - `candidate_criterion_result`: 387
 - `risk_reward_result`: 36
 - `broker_recommendation`: 5
-- `data_import_batch`: 91
+- `data_import_batch`: 103
 - `trade_journal`: 0
-- Latest OHLCV date: 2026-09-03
+- Latest OHLCV date: 2026-09-22
 - Synthetic/test OHLCV: 0
+- Duplicate canonical keys, invalid OHLC, negative volume: 0
 - `PRAGMA integrity_check`: `ok`
 - `PRAGMA foreign_key_check`: 0 violations
+
+### Completed production OHLCV catch-up (2026-09-22)
+
+NSE Bhavcopy sessions 2026-09-04 to 2026-09-22 (12 sessions, 27 tracked rows each, 324 rows, import batches 92-103) were imported into production through `scratch/auto_download_ohlcv.py --confirm-production` after disposable acceptance, exact-file revalidation and a verified backup. Details: `docs/automated-refresh-acceptance-validation.md`.
+
+Pre-import backups (SQLite backup API, 5095 rows, latest 2026-09-03, integrity `ok`, 0 FK violations, SHA-256 `269328ce902872d704324f6af5b3664b9f60fed8d1fa8187502595eaaf6650c0`):
+
+- `data\backups\swing_trading_pre_ohlcv_catchup_20260922_150209.db`
+- `data\swing_trading_backup_20260922_150250_207469.db` (automation backup)
+
+Candidate evaluations have not been rerun after the catch-up; a candidate refresh is a separate task requiring explicit authorization.
 
 Do not modify production merely to make a test pass. Before any authorized production correction or import:
 

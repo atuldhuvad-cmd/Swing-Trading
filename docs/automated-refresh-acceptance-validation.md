@@ -81,3 +81,22 @@ Full Windows run, 2026-09-22 (`scratch/logs/release_gate_20260922_142812.log`, O
 - **Full Playwright suite:** 195 passed, 7 skipped of 202. It ran to completion, with no failed, flaky, interrupted or did-not-run tests.
 - **Backend responses:** only 200s, plus the suite's intentional `/api/evidence/stocks/999999` 404 checks. There were no 5xx responses.
 - **Production:** SHA-256 was `eb0e2eaf4fe40db4e3dd2c43f90fb7ec43a0370fcaa6645f923b5bf1322de49e` at start and end. Integrity is `ok` with 0 foreign-key violations, and the data was not imported or modified.
+
+## Production catch-up completed (2026-09-22)
+
+The sections above describe the pre-import state and remain accurate for those runs.
+
+Authorized production import, run `manual_inputs/nse/auto/production_catchup/run_20260922_150209` (git-ignored), OVERALL: PASS:
+
+- Before any write: branch and HEAD `92be149` matched origin, the worktree was clean, no app process was running, and production matched the pre-import baseline. The 12 accepted files revalidated, and a fresh NSE download was byte-identical to them.
+- Pre-import backups: `data/backups/swing_trading_pre_ohlcv_catchup_20260922_150209.db` and the automation's `data/swing_trading_backup_20260922_150250_207469.db`. Both have SHA-256 `269328ce902872d704324f6af5b3664b9f60fed8d1fa8187502595eaaf6650c0`, baseline counts, integrity `ok` and 0 FK violations.
+- Import: `scratch/auto_download_ohlcv.py --skip-symbols --bhavcopy-from 04-09-2026 --bhavcopy-to 22-09-2026 --confirm-production` through `OhlcvService.confirm_import`.
+  - 12 sessions, 27 rows inserted each, 324 in total, with 0 duplicates, 0 conflicts and 0 invalid rows.
+  - Import batches 92-103 carry the accepted file SHA-256, filename and source reference.
+  - All 324 new rows are `NSE_BHAVCOPY` EQ rows linked to the batch for their date.
+- After import: `daily_ohlcv` 5095 → 5419, latest 2026-09-03 → 2026-09-22, `data_import_batch` 91 → 103. Every tracked stock gained 12 sessions. No pre-existing row changed.
+- Unchanged: fundamentals 20, candidate runs 43, criteria 387, risk/reward 36, broker recommendations 5, trade journal 0.
+- Checks: 0 duplicate keys, 0 invalid OHLC, 0 negative volumes and 0 synthetic rows. Integrity is `ok` with 0 FK violations. The targeted backend tests passed 22 of 22, and `GET /health` returned `{"status":"ok","foreign_keys":1}`.
+- The files were not replayed against production, no candidate evaluation was run, and no scheduled task was registered.
+
+The current production baseline is SHA-256 `fd78dda7e8d4f8a27fafdbd878e3a1dc329de44860659104ffad0e321522f5b5`. The runner guards in `scratch/` now use it.

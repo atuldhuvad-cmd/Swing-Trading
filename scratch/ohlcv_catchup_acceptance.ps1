@@ -33,7 +33,7 @@ $ErrorActionPreference = 'Stop'
 
 $Root       = 'D:\Swing Trading'
 $ProdDb     = Join-Path $Root 'data\swing_trading.db'
-$ProdSha    = 'eb0e2eaf4fe40db4e3dd2c43f90fb7ec43a0370fcaa6645f923b5bf1322de49e'
+$ProdSha    = 'fd78dda7e8d4f8a27fafdbd878e3a1dc329de44860659104ffad0e321522f5b5'
 $Py         = Join-Path $Root 'backend\venv\Scripts\python.exe'
 $AutoScript = Join-Path $Root 'scratch\auto_download_ohlcv.py'
 $Helper     = Join-Path $Root 'scratch\ohlcv_catchup_acceptance.py'
