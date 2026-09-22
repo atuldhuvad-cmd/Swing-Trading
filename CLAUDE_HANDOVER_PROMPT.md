@@ -41,14 +41,14 @@ Production database:
 
 `D:\Swing Trading\data\swing_trading.db`
 
-Verified on 2026-09-22, after the controlled production OHLCV catch-up:
+Verified on 2026-09-22, after the controlled production OHLCV catch-up and the post-catch-up candidate refresh:
 
-- SHA-256: `fd78dda7e8d4f8a27fafdbd878e3a1dc329de44860659104ffad0e321522f5b5`
+- SHA-256: `5ab98238badd90d59c0cb8626af6b55a62e3b73fb9043fa2ac0cfb25adeb3756`
 - `daily_ohlcv`: 5419
 - `fundamental_snapshot`: 20
-- `candidate_evaluation_run`: 43
-- `candidate_criterion_result`: 387
-- `risk_reward_result`: 36
+- `candidate_evaluation_run`: 70
+- `candidate_criterion_result`: 630
+- `risk_reward_result`: 53
 - `broker_recommendation`: 5
 - `data_import_batch`: 103
 - `trade_journal`: 0
@@ -67,7 +67,17 @@ Pre-import backups (SQLite backup API, 5095 rows, latest 2026-09-03, integrity `
 - `data\backups\swing_trading_pre_ohlcv_catchup_20260922_150209.db`
 - `data\swing_trading_backup_20260922_150250_207469.db` (automation backup)
 
-Candidate evaluations have not been rerun after the catch-up; a candidate refresh is a separate task requiring explicit authorization.
+Candidate evaluations were not rerun during the catch-up itself; they were refreshed afterwards (below).
+
+### Completed post-catch-up candidate refresh (2026-09-22)
+
+Every tracked stock was re-evaluated once with the active `phase5_trend_screen_v1` configuration (fingerprint `146408d7d5de3ce55acd5465d2c788acca9d8e1875c21e1af470151a3f0f97fe`) through the application services (`CorporateActionService`, `TechnicalService`, `FundamentalService`, `CandidateService.evaluate_candidate`, `RiskRewardService`). No evaluation was written by SQL. Rules, thresholds, formulas, OHLCV, fundamentals and broker data were not changed. Run folder (git-ignored): `manual_inputs/candidate_refresh/run_20260922_155830`.
+
+- Pre-refresh backup (SQLite backup API, runs 43, criteria 387, risk/reward 36, every table identical to production, integrity `ok`, 0 FK violations): `data\backups\swing_trading_pre_candidate_refresh_20260922_155830.db`, SHA-256 `d2f5a660f95488f5d75c640cfa6cba04b28ac96dc2b2768f21c333cf8c5fec9d`.
+- Rehearsed on two independent disposable copies; both passed and produced identical results, and production then matched them exactly.
+- Production: 27 new runs (ids 44-70, one per tracked stock), 243 new criterion rows (27 x 9 criteria), 17 new risk/reward rows (only where ATR14, Support20 and Resistance20 exist and 0 < stop < entry < target).
+- Latest classifications: FINAL_CANDIDATE 3, WATCH 4, REJECTED 13, INSUFFICIENT_DATA 7. The 7 INSUFFICIENT_DATA stocks are the six 18-session stocks and INDIGO (12 sessions), none of which has imported fundamentals.
+- Historical runs 1-43, their 387 criteria and risk/reward rows 1-36 are unchanged; every non-candidate table is unchanged.
 
 Do not modify production merely to make a test pass. Before any authorized production correction or import:
 

@@ -2,28 +2,29 @@ import { expect, test, type Page, type Request, type Response } from '@playwrigh
 
 const PHASE5_FP = '146408d7d5de3ce55acd5465d2c788acca9d8e1875c21e1af470151a3f0f97fe';
 const INSURANCE_LINE = "Total Income (Policyholders' Account)";
+// Latest production evaluations after the 2026-09-22 post-catch-up candidate refresh (evaluation ids 56-66).
 const BATCH_B: Record<string, string> = {
-  CIPLA: 'FINAL_CANDIDATE',
-  COALINDIA: 'REJECTED',
-  DRREDDY: 'REJECTED',
-  EICHERMOT: 'FINAL_CANDIDATE',
+  CIPLA: 'REJECTED',
+  COALINDIA: 'WATCH',
+  DRREDDY: 'WATCH',
+  EICHERMOT: 'REJECTED',
   ETERNAL: 'FINAL_CANDIDATE',
-  GRASIM: 'FINAL_CANDIDATE',
+  GRASIM: 'REJECTED',
   HCLTECH: 'WATCH',
   HDFCBANK: 'REJECTED',
-  HDFCLIFE: 'REJECTED',
-  HINDALCO: 'FINAL_CANDIDATE',
+  HDFCLIFE: 'WATCH',
+  HINDALCO: 'REJECTED',
 };
 const RR_PREFIX: Record<string, string> = {
-  CIPLA: '0.4639',
-  COALINDIA: '2.0070',
-  DRREDDY: '0.4162',
-  GRASIM: '0.9558',
-  HDFCBANK: '5.3229',
-  HDFCLIFE: '2.8142',
-  HINDALCO: '0.8121',
+  CIPLA: '1.9592',
+  COALINDIA: '0.3077',
+  EICHERMOT: '3.1769',
+  GRASIM: '2.5365',
+  HCLTECH: '1.6205',
+  HDFCLIFE: '0.0500',
+  HINDALCO: '3.0551',
 };
-const RR_NA = ['EICHERMOT', 'ETERNAL', 'HCLTECH'];
+const RR_NA = ['DRREDDY', 'ETERNAL', 'HDFCBANK'];
 const viewports = [
   { label: '320px', width: 320, height: 800 },
   { label: '375px', width: 375, height: 812 },
@@ -98,9 +99,9 @@ test.describe('Phase 5 Batch B evidence UI', () => {
         expect(detail.risk_reward?.rr_ratio == null).toBeTruthy();
       }
     }
-    expect(batchCounts.FINAL_CANDIDATE).toBe(5);
-    expect(batchCounts.WATCH).toBe(1);
-    expect(batchCounts.REJECTED).toBe(4);
+    expect(batchCounts.FINAL_CANDIDATE).toBe(1);
+    expect(batchCounts.WATCH).toBe(4);
+    expect(batchCounts.REJECTED).toBe(5);
     expect(batchCounts.INSUFFICIENT_DATA || 0).toBe(0);
 
     const missing = await request.get('/api/evidence/stocks/999999');

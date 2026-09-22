@@ -15,21 +15,23 @@ test.describe('Phase 5 production evidence UI', () => {
     }
     expect(items.every((row: { evaluation_id: number }) => row.evaluation_id >= 24)).toBeTruthy();
     expect(items.every((row: { config_fingerprint: string }) => row.config_fingerprint === PHASE5_FP)).toBeTruthy();
-    expect(counts.FINAL_CANDIDATE || 0).toBe(8);
+    expect(items.length).toBe(27);
+    expect(counts.FINAL_CANDIDATE || 0).toBe(3);
     expect(counts.WATCH || 0).toBe(4);
-    expect(counts.REJECTED || 0).toBe(8);
-    expect(counts.INSUFFICIENT_DATA || 0).toBe(0);
-    expect(items.filter((row: { rr_available?: boolean }) => row.rr_available).length).toBe(16);
+    expect(counts.REJECTED || 0).toBe(13);
+    expect(counts.INSUFFICIENT_DATA || 0).toBe(7);
+    expect(items.filter((row: { rr_available?: boolean }) => row.rr_available).length).toBe(17);
     expect(items.some((row: { rr_ratio?: string | null }) => row.rr_ratio === '0.6052')).toBeFalsy();
 
     const rejected = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'ADANIENT');
-    const watch = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'BAJAJFINSV');
-    const finalRow = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'ASIANPAINT');
-    const bel = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'BEL');
+    const watch = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'HCLTECH');
+    const finalRow = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'ADANIPORTS');
+    const rrNa = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'DRREDDY');
     expect(rejected?.status).toBe('REJECTED');
     expect(watch?.status).toBe('WATCH');
     expect(finalRow?.status).toBe('FINAL_CANDIDATE');
-    expect(bel?.rr_available).toBeFalsy();
+    expect(rrNa?.status).toBe('WATCH');
+    expect(rrNa?.rr_available).toBeFalsy();
 
     await page.goto('/final-candidates', { waitUntil: 'load' });
     await expect(page.getByRole('heading', { name: 'Candidates' })).toBeVisible();
@@ -46,7 +48,7 @@ test.describe('Phase 5 production evidence UI', () => {
     await expect(page.getByText('FINAL_CANDIDATE').first()).toBeVisible();
     await expect(page.getByText('INSUFFICIENT_DATA').first()).toBeVisible();
     await expect(page.getByRole('button', { name: /ADANIENT/ }).getByText(rejected.decisive_reason, { exact: false })).toBeVisible();
-    await expect(page.getByRole('button', { name: /BAJAJFINSV/ }).getByText(watch.decisive_reason, { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: /HCLTECH/ }).getByText(watch.decisive_reason, { exact: false })).toBeVisible();
     await expect(page.getByText('close > SMA50').first()).toBeVisible();
     await expect(page.getByText('SMA50 > SMA200').first()).toBeVisible();
   });
@@ -55,10 +57,11 @@ test.describe('Phase 5 production evidence UI', () => {
     const listed = await request.get('/api/evidence/candidates');
     const items = (await listed.json()).items || [];
     const adanient = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'ADANIENT');
-    const asian = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'ASIANPAINT');
-    const bajajfinsv = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'BAJAJFINSV');
-    const bel = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'BEL');
-    expect(adanient && asian && bajajfinsv && bel).toBeTruthy();
+    const finalRow = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'ADANIPORTS');
+    const watch = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'HCLTECH');
+    const rrNa = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'DRREDDY');
+    const missing = items.find((row: { nse_symbol: string }) => row.nse_symbol === 'INDIGO');
+    expect(adanient && finalRow && watch && rrNa && missing).toBeTruthy();
 
     const body = await (await request.get(`/api/evidence/stocks/${adanient.stock_id}`)).json();
     expect(body.candidate?.evaluation_id).toBe(adanient.evaluation_id);
@@ -79,18 +82,24 @@ test.describe('Phase 5 production evidence UI', () => {
     await expect(page.getByText(body.candidate.decisive_reason, { exact: false }).first()).toBeVisible();
     await expect(page.getByText('Not a guaranteed BUY', { exact: false })).toBeVisible();
 
-    await page.goto(`/evidence/${asian.stock_id}`, { waitUntil: 'load' });
+    await page.goto(`/evidence/${finalRow.stock_id}`, { waitUntil: 'load' });
     await expect(page.getByText('FINAL_CANDIDATE').first()).toBeVisible();
     await expect(page.getByText('Passes current Phase 5 trend screen.', { exact: false }).first()).toBeVisible();
 
-    await page.goto(`/evidence/${bajajfinsv.stock_id}`, { waitUntil: 'load' });
+    await page.goto(`/evidence/${watch.stock_id}`, { waitUntil: 'load' });
     await expect(page.getByText('WATCH').first()).toBeVisible();
     await expect(page.getByText('Primary trend criterion passes, trend confirmation fails.', { exact: false }).first()).toBeVisible();
 
-    await page.goto(`/evidence/${bel.stock_id}`, { waitUntil: 'load' });
+    await page.goto(`/evidence/${rrNa.stock_id}`, { waitUntil: 'load' });
     await expect(page.getByText('WATCH').first()).toBeVisible();
     await expect(page.getByText('RR N/A', { exact: false })).toBeVisible();
     await expect(page.getByText('0.6052')).toHaveCount(0);
+
+    await page.goto(`/evidence/${missing.stock_id}`, { waitUntil: 'load' });
+    await expect(page.getByText('INSUFFICIENT_DATA').first()).toBeVisible();
+    await expect(page.getByText('Mandatory evidence unavailable.', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('No core fundamentals collected', { exact: false })).toBeVisible();
+    await expect(page.getByText('RR N/A', { exact: false })).toBeVisible();
   });
 
   test('Invalid stock shows error state', async ({ page }) => {

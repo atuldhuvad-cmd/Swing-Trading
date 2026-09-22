@@ -99,4 +99,20 @@ Authorized production import, run `manual_inputs/nse/auto/production_catchup/run
 - Checks: 0 duplicate keys, 0 invalid OHLC, 0 negative volumes and 0 synthetic rows. Integrity is `ok` with 0 FK violations. The targeted backend tests passed 22 of 22, and `GET /health` returned `{"status":"ok","foreign_keys":1}`.
 - The files were not replayed against production, no candidate evaluation was run, and no scheduled task was registered.
 
-The current production baseline is SHA-256 `fd78dda7e8d4f8a27fafdbd878e3a1dc329de44860659104ffad0e321522f5b5`. The runner guards in `scratch/` now use it.
+After the catch-up, the production baseline was SHA-256 `fd78dda7e8d4f8a27fafdbd878e3a1dc329de44860659104ffad0e321522f5b5`. It changed again with the candidate refresh below.
+
+## Candidate refresh completed (2026-09-22)
+
+The sections above remain accurate for their runs.
+
+Authorized candidate refresh, run `manual_inputs/candidate_refresh/run_20260922_155830` (git-ignored), after HEAD `7febd0e` matched origin with a clean worktree and no app process running:
+
+- Configuration: `phase5_trend_screen_v1` / `phase5-v1`, fingerprint `146408d7d5de3ce55acd5465d2c788acca9d8e1875c21e1af470151a3f0f97fe`, 9 criteria. The legacy Batch A fingerprint was unchanged.
+- Backup: `data/backups/swing_trading_pre_candidate_refresh_20260922_155830.db` via the SQLite backup API. Every table matched production, integrity `ok`, 0 FK violations.
+- Rehearsal: two independent disposable copies outside the project. Both passed, and the new runs were identical, criterion by criterion. The runner refused a second run on a refreshed copy, a production target without `--confirm-production`, and production without passing backup and rehearsal reports.
+- Production: one transaction, all checks before commit. Runs 43 → 70 (ids 44-70, one per tracked stock), criteria 387 → 630 (27 x 9), risk/reward 36 → 53. The results were identical to both rehearsals.
+- Classifications: FINAL_CANDIDATE 3 (ADANIPORTS, BAJAJ-AUTO, ETERNAL), WATCH 4 (COALINDIA, DRREDDY, HCLTECH, HDFCLIFE), REJECTED 13, INSUFFICIENT_DATA 7 (ASTRAMICRO, CARYSIL, GLAND, INDIGO, NRBBEARING, RELIANCE, TCS).
+- Evidence: the 20 full-history stocks had every indicator and their imported fundamental snapshot. The six 18-session stocks had only RSI14 and ATR14; INDIGO (12 sessions) had none. Missing evidence stayed UNKNOWN: no PASS without a value, and no UNKNOWN in a FINAL_CANDIDATE or WATCH run. Risk/reward was stored only where the existing engine rules produce a complete result (17 stocks).
+- Independent forensic diff against the backup: 0 historical run, criterion or risk/reward rows updated or deleted, and all 24 non-candidate tables unchanged (OHLCV 5419, fundamentals 20, broker recommendations 5). Integrity `ok`, 0 FK violations. Targeted backend tests: 75 passed.
+- New production baseline: SHA-256 `5ab98238badd90d59c0cb8626af6b55a62e3b73fb9043fa2ac0cfb25adeb3756`. The runner guards in `scratch/` use it, and the data-dependent Playwright expectations now match the refreshed evaluations.
+- Final release gate (`scratch/logs/release_gate_20260922_161748.log`), run on a fresh disposable copy of the refreshed production: OVERALL: PASS. Backend 196 passed, frontend unit 51 passed, lint PASS with the five known warnings, build PASS, health/API/page checks PASS, data-tools Playwright 7 passed of 7, full Playwright 195 passed and 7 skipped of 202 with no failed or flaky tests. The only HTTP errors were the intentional `/api/evidence/stocks/999999` 404 checks, with no 5xx. Production SHA-256 was unchanged at start and end.
