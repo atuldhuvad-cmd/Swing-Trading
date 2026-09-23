@@ -195,3 +195,28 @@ def test_wrappers_log_and_return_the_script_exit_code(name, log):
 def test_icici_wrapper_passes_the_production_confirmation_flag():
     text = (SCRATCH / "run_broker_recs_icici.bat").read_text(encoding="utf-8")
     assert "--import --confirm-production" in text
+
+
+# ---------------------------------------------------------------- regression: post-registration message
+
+def test_registered_message_and_limit_helper_handle_the_stored_limit_format():
+    """Regression: the line printed after Register-ScheduledTask read .TotalMinutes off the
+    ISO-8601 string ExecutionTimeLimit and aborted the script with exit 1 after registering."""
+    result = ps(
+        f". '{DEFS}'; "
+        f"$m = @(Select-SwingTasks -RepoRoot '{FAKE_ROOT}' -Task 'All' | ForEach-Object {{ Get-SwingRegisteredMessage -Definition $_ }}); "
+        "ConvertTo-Json -InputObject $m"
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        "Registered: SwingTrading-ICICI-Recs (Mon-Fri 20:00, limit 30 min)",
+        "Registered: SwingTrading-OHLCV-Bhavcopy (Mon-Fri 19:00, limit 120 min)",
+        "Registered: SwingTrading-Fundamentals (15th of Feb/May/Aug/Nov 09:00, limit 60 min)",
+    ]
+
+
+def test_registration_script_never_reads_total_minutes_from_the_raw_limit():
+    for path in (REGISTER, DEFS):
+        text = path.read_text(encoding="utf-8")
+        assert "ExecutionTimeLimit.TotalMinutes" not in text, path.name
+    assert "Get-SwingRegisteredMessage" in REGISTER.read_text(encoding="utf-8")

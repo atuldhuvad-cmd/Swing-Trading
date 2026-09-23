@@ -85,6 +85,18 @@ function Select-SwingTasks {
     return @($keys | ForEach-Object { Get-SwingTaskDefinition -RepoRoot $RepoRoot -Key $_ })
 }
 
+function Get-SwingTaskLimitMinutes {
+    # ExecutionTimeLimit is stored as an ISO 8601 string such as PT30M, not a TimeSpan.
+    param([Parameter(Mandatory = $true)]$Settings)
+    return [int][System.Xml.XmlConvert]::ToTimeSpan([string]$Settings.ExecutionTimeLimit).TotalMinutes
+}
+
+function Get-SwingRegisteredMessage {
+    # The line printed after a task is registered; kept here so it is tested without registering.
+    param([Parameter(Mandatory = $true)]$Definition)
+    return ('Registered: {0} ({1}, limit {2} min)' -f $Definition.TaskName, $Definition.TriggerText, (Get-SwingTaskLimitMinutes -Settings $Definition.Settings))
+}
+
 function Get-SwingTaskSummary {
     param([Parameter(Mandatory = $true)]$Definition)
     $trigger = $Definition.Trigger
@@ -98,7 +110,7 @@ function Get-SwingTaskSummary {
         Trigger            = $Definition.TriggerText
         StartTime          = if ($trigger) { ([datetime]$trigger.StartBoundary).ToString('HH:mm', [System.Globalization.CultureInfo]::InvariantCulture) } else { $null }
         DaysOfWeek         = if ($trigger -and $trigger.PSObject.Properties['DaysOfWeek']) { [int]$trigger.DaysOfWeek } else { $null }
-        LimitMinutes       = [int][System.Xml.XmlConvert]::ToTimeSpan([string]$Definition.Settings.ExecutionTimeLimit).TotalMinutes
+        LimitMinutes       = Get-SwingTaskLimitMinutes -Settings $Definition.Settings
         MultipleInstances  = [string]$Definition.Settings.MultipleInstances
         StartWhenAvailable = [bool]$Definition.Settings.StartWhenAvailable
         HasPrincipal       = [bool]$Definition.PSObject.Properties['Principal']

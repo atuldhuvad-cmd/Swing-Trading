@@ -126,7 +126,7 @@ foreach ($d in $selected) {
     }
     if (Get-ScheduledTask -TaskName $d.TaskName -ErrorAction SilentlyContinue) { $params['Force'] = $true }
     Register-ScheduledTask @params | Out-Null
-    Write-Host ("Registered: {0} ({1}, limit {2} min)" -f $d.TaskName, $d.TriggerText, [int]$d.Settings.ExecutionTimeLimit.TotalMinutes)
+    Write-Host (Get-SwingRegisteredMessage -Definition $d)
 }
 Write-Host ''
 Write-Host 'Done. Logs appear under scratch\logs\ after each run; each script also writes its usual JSON report.'
