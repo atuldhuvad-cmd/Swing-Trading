@@ -20,7 +20,8 @@
     SwingTrading-ICICI-Recs
       Mon-Fri 20:00 -- matches this project's README note that daily is
       the most feasible check frequency for ICICI Direct.
-      Download/report only. Never writes to the database.
+      Downloads the page and IMPORTS new/changed calls for tracked stocks
+      (backup first, strict validation; see the script's docstring).
 
     SwingTrading-Fundamentals
       15th of Feb, May, Aug, Nov, 09:00 -- you asked for a quarterly
@@ -93,7 +94,7 @@ $icicAction  = New-BatchAction $IcicBat
 $icicTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 8:00PM
 Register-ScheduledTask -TaskName 'SwingTrading-ICICI-Recs' `
     -Action $icicAction -Trigger $icicTrigger -Settings $taskSettings -Force `
-    -Description 'Swing Trading: ICICI Direct broker recommendation discovery (download/report only, no DB writes). See scratch\auto_download_broker_recs_icici.py.' | Out-Null
+    -Description 'Swing Trading: ICICI Direct broker recommendation download + auto-import for tracked stocks (backs up the database first). See scratch\auto_download_broker_recs_icici.py.' | Out-Null
 Write-Host 'Registered: SwingTrading-ICICI-Recs (Mon-Fri 20:00)'
 
 # --- SwingTrading-Fundamentals: 15th of Feb/May/Aug/Nov, 09:00 ---------
