@@ -1,111 +1,133 @@
 <#
 .SYNOPSIS
-  Registers Windows Task Scheduler entries so the on-demand auto-download
-  scripts run on their own, without you triggering them by hand or from
-  the app's Data Sync screen every time.
+  Registers or updates ONE named Swing Trading Task Scheduler entry.
 
 .DESCRIPTION
-  Run this ONCE yourself, in a normal (non-admin) PowerShell window, from
-  anywhere -- it locates the repo root relative to its own location. It is
-  safe to re-run: existing tasks with the same name are replaced, nothing
-  is duplicated.
+  Nothing is registered implicitly. You must choose the task and confirm:
 
-  What gets registered, and why:
+    -Task ICICI          SwingTrading-ICICI-Recs        Mon-Fri 20:00, 30 minute limit
+    -Task OHLCV          SwingTrading-OHLCV-Bhavcopy    Mon-Fri 19:00, 120 minute limit
+    -Task Fundamentals   SwingTrading-Fundamentals      previewable only: this script cannot register it
+                         (no -Monthly trigger support here); 60 minute limit
+    -Task All            all three; refused while Fundamentals is included
+                         (still needs -ConfirmRegistration)
 
-    SwingTrading-OHLCV-Bhavcopy
-      Mon-Fri 19:00 (after NSE market close + typical Bhavcopy publish time)
-      Backs up, then IMPORTS into, the production database -- same as
-      running scratch\auto_download_ohlcv.py by hand.
+  Selecting one task never touches the others. Task Scheduler is changed only
+  when -ConfirmRegistration is given; if the task already exists its definition
+  is replaced (only that one task). Without the confirmation switch the script
+  refuses and changes nothing.
 
-    SwingTrading-ICICI-Recs
-      Mon-Fri 20:00 -- matches this project's README note that daily is
-      the most feasible check frequency for ICICI Direct.
-      Downloads the page and IMPORTS new/changed calls for tracked stocks
-      (backup first, strict validation; see the script's docstring).
+  Non-mutating modes (no scheduled task is created or changed):
+    -WhatIf         shows exactly what would be registered, including whether it
+                    would create or replace a task, then exits 0.
+    -ValidateOnly   checks paths and builds the definitions, then exits 0.
+                    -Task is optional here (defaults to All).
 
-    SwingTrading-Fundamentals
-      15th of Feb, May, Aug, Nov, 09:00 -- you asked for a quarterly
-      cadence. Results are typically announced 4-8 weeks after quarter-end,
-      so these four fixed dates land roughly mid-results-season for each
-      quarter. The script's own 120-day lookback window is a safety
-      margin in case a filing is late; adjust the -MonthsOfYear /
-      -DaysOfMonth below if your tracked stocks report on a different
-      pattern.
-      Download/report only. Never writes to the database.
+  Every task: runs its committed wrapper through cmd.exe with the path quoted and
+  the project folder as working directory, has a bounded execution limit, never
+  overlaps itself (MultipleInstances = IgnoreNew), and stores no password or
+  credential (it runs as the registering user, interactively). Wrappers return
+  the script's exit code, so a failed run is a non-zero task result.
 
-  Each task runs while you are logged in (no stored password, no elevated
-  "run whether logged on or not" -- kept simple for personal use) and
-  appends to a log file under scratch\logs\, in addition to the timestamped
-  JSON report each script already writes on every run.
+  Definitions live in scheduled_task_definitions.ps1 (pure, testable). Run this
+  from the authoritative checkout D:\Swing Trading only; any other folder is
+  refused. To remove tasks later, run unregister_scheduled_tasks.ps1.
 
-  To remove these tasks later, run unregister_scheduled_tasks.ps1.
+.EXAMPLE
+  powershell -NoProfile -ExecutionPolicy Bypass -File 'D:\Swing Trading\scratch\register_scheduled_tasks.ps1' -Task ICICI -WhatIf
+
+.EXAMPLE
+  powershell -NoProfile -ExecutionPolicy Bypass -File 'D:\Swing Trading\scratch\register_scheduled_tasks.ps1' -Task ICICI -ConfirmRegistration
 
 .NOTES
-  This script only registers Task Scheduler entries. It does not run any
-  of the download scripts itself, and it makes no network calls.
+  Makes no network calls and runs none of the download scripts.
 #>
 
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'None')]
 param(
+    [ValidateSet('ICICI', 'OHLCV', 'Fundamentals', 'All')]
+    [string]$Task,
+    [switch]$ConfirmRegistration,
     [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
+# Remember a preview request, then keep -WhatIf out of the in-memory builders and read-only queries.
+$previewOnly = [bool]$WhatIfPreference
+$WhatIfPreference = $false
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $VenvPython = Join-Path $RepoRoot 'backend\venv\Scripts\python.exe'
 
-$OhlcvBat        = Join-Path $PSScriptRoot 'run_ohlcv.bat'
-$FundamentalsBat = Join-Path $PSScriptRoot 'run_fundamentals.bat'
-$IcicBat         = Join-Path $PSScriptRoot 'run_broker_recs_icici.bat'
+. (Join-Path $PSScriptRoot 'scheduled_task_definitions.ps1')
 
-foreach ($p in @($VenvPython, $OhlcvBat, $FundamentalsBat, $IcicBat)) {
-    if (-not (Test-Path $p)) {
-        throw "Expected wrapper script not found: $p -- did you move this file out of scratch\?"
+if ((Split-Path $RepoRoot -Leaf) -ne 'Swing Trading') {
+    [Console]::Error.WriteLine("Refusing to run from '$RepoRoot': tasks must be registered from the authoritative checkout 'D:\Swing Trading'.")
+    exit 2
+}
+
+if (-not $Task) {
+    if ($ValidateOnly) {
+        $Task = 'All'
+    } else {
+        [Console]::Error.WriteLine("Specify -Task ICICI, OHLCV, Fundamentals or All. Nothing is registered implicitly.")
+        exit 2
+    }
+}
+
+$selected = @(Select-SwingTasks -RepoRoot $RepoRoot -Task $Task)
+
+foreach ($p in @($VenvPython) + @($selected | ForEach-Object { $_.Wrapper })) {
+    if (-not (Test-Path -LiteralPath $p)) {
+        throw "Expected file not found: $p -- did you move this file out of scratch\?"
     }
 }
 
 Write-Host "Repo root resolved to: $RepoRoot"
+Write-Host "Selected task(s): $((@($selected | ForEach-Object { $_.TaskName })) -join ', ')"
+foreach ($d in $selected) {
+    $s = Get-SwingTaskSummary -Definition $d
+    $existing = Get-ScheduledTask -TaskName $d.TaskName -ErrorAction SilentlyContinue
+    $state = if ($d.Unsupported) { 'NOT REGISTERABLE BY THIS SCRIPT' } elseif ($existing) { 'EXISTS - would be replaced' } else { 'not registered - would be created' }
+    Write-Host ''
+    Write-Host ("  {0}  [{1}]" -f $s.TaskName, $state)
+    Write-Host ("    Action:     {0} {1}" -f $s.Execute, $s.Arguments)
+    Write-Host ("    Working:    {0}" -f $s.WorkingDirectory)
+    Write-Host ("    Trigger:    {0}" -f $s.Trigger)
+    Write-Host ("    Limit:      {0} minutes" -f $s.LimitMinutes)
+    Write-Host ("    Overlap:    {0}; StartWhenAvailable={1}" -f $s.MultipleInstances, $s.StartWhenAvailable)
+    Write-Host '    Credentials: none stored (runs as the registering user, interactively)'
+    if ($d.Unsupported) { Write-Host ('    Reason:     ' + $d.Unsupported) }
+}
+Write-Host ''
 
-if ($ValidateOnly) {
-    Write-Host 'Validation passed: project Python and all three wrappers exist.'
-    Write-Host 'No scheduled tasks were created or changed.'
+if ($ValidateOnly -or $previewOnly) {
+    Write-Host 'Validation passed. No scheduled tasks were created or changed.'
     exit 0
 }
 
-$CmdExe = Join-Path $env:WINDIR 'System32\cmd.exe'
-function New-BatchAction([string]$BatchPath) {
-    # Task Scheduler actions need a real executable; cmd.exe reliably launches
-    # a .bat even when the repository path contains spaces.
-    $quoted = '"' + $BatchPath + '"'
-    New-ScheduledTaskAction -Execute $CmdExe -Argument "/d /c $quoted" -WorkingDirectory $RepoRoot
+if (-not $ConfirmRegistration) {
+    [Console]::Error.WriteLine('Refused: pass -ConfirmRegistration to modify Task Scheduler (or -WhatIf / -ValidateOnly to preview). No scheduled tasks were created or changed.')
+    exit 2
 }
 
-$taskSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable
+$blocked = @($selected | Where-Object { $_.Unsupported })
+if ($blocked.Count -gt 0) {
+    [Console]::Error.WriteLine('Refused: ' + ((@($blocked | ForEach-Object { $_.TaskName })) -join ', ') + ' cannot be registered by this script (see the reason above). Nothing was changed; select -Task ICICI or -Task OHLCV instead.')
+    exit 2
+}
 
-# --- SwingTrading-OHLCV-Bhavcopy: Mon-Fri 19:00 -------------------------
-$ohlcvAction  = New-BatchAction $OhlcvBat
-$ohlcvTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 7:00PM
-Register-ScheduledTask -TaskName 'SwingTrading-OHLCV-Bhavcopy' `
-    -Action $ohlcvAction -Trigger $ohlcvTrigger -Settings $taskSettings -Force `
-    -Description 'Swing Trading: per-symbol OHLCV + daily Bhavcopy download and import (writes to the production DB). See scratch\auto_download_ohlcv.py.' | Out-Null
-Write-Host 'Registered: SwingTrading-OHLCV-Bhavcopy (Mon-Fri 19:00)'
-
-# --- SwingTrading-ICICI-Recs: Mon-Fri 20:00 -----------------------------
-$icicAction  = New-BatchAction $IcicBat
-$icicTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 8:00PM
-Register-ScheduledTask -TaskName 'SwingTrading-ICICI-Recs' `
-    -Action $icicAction -Trigger $icicTrigger -Settings $taskSettings -Force `
-    -Description 'Swing Trading: ICICI Direct broker recommendation download + auto-import for tracked stocks (backs up the database first). See scratch\auto_download_broker_recs_icici.py.' | Out-Null
-Write-Host 'Registered: SwingTrading-ICICI-Recs (Mon-Fri 20:00)'
-
-# --- SwingTrading-Fundamentals: 15th of Feb/May/Aug/Nov, 09:00 ---------
-$fundAction  = New-BatchAction $FundamentalsBat
-$fundTrigger = New-ScheduledTaskTrigger -Monthly -DaysOfMonth 15 `
-    -MonthsOfYear February,May,August,November -At 9:00AM
-Register-ScheduledTask -TaskName 'SwingTrading-Fundamentals' `
-    -Action $fundAction -Trigger $fundTrigger -Settings $taskSettings -Force `
-    -Description 'Swing Trading: quarterly fundamentals filing discovery (download/report only, no DB writes). See scratch\auto_download_fundamentals.py.' | Out-Null
-Write-Host 'Registered: SwingTrading-Fundamentals (15th of Feb/May/Aug/Nov, 09:00)'
-
+foreach ($d in $selected) {
+    $params = @{
+        TaskName    = $d.TaskName
+        Action      = $d.Action
+        Trigger     = $d.Trigger
+        Settings    = $d.Settings
+        Description = $d.Description
+    }
+    if (Get-ScheduledTask -TaskName $d.TaskName -ErrorAction SilentlyContinue) { $params['Force'] = $true }
+    Register-ScheduledTask @params | Out-Null
+    Write-Host ("Registered: {0} ({1}, limit {2} min)" -f $d.TaskName, $d.TriggerText, [int]$d.Settings.ExecutionTimeLimit.TotalMinutes)
+}
 Write-Host ''
-Write-Host 'Done. View/edit these anytime in Task Scheduler under Task Scheduler Library (no subfolder).'
-Write-Host 'Logs will appear under scratch\logs\ after each run; each script also writes its usual JSON report.'
+Write-Host 'Done. Logs appear under scratch\logs\ after each run; each script also writes its usual JSON report.'
+exit 0

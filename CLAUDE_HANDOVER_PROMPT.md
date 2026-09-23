@@ -41,15 +41,15 @@ Production database:
 
 `D:\Swing Trading\data\swing_trading.db`
 
-Verified on 2026-09-22, after the controlled production OHLCV catch-up and the post-catch-up candidate refresh:
+Verified on 2026-09-23, after the controlled production OHLCV catch-up, the post-catch-up candidate refresh and the first ICICI recommendation import:
 
-- SHA-256: `5ab98238badd90d59c0cb8626af6b55a62e3b73fb9043fa2ac0cfb25adeb3756`
+- SHA-256: `bffa9e78df236d9cf47bdd9e08026cd6ea8769bd5d8d3da04e1660fe590f9049`
 - `daily_ohlcv`: 5419
 - `fundamental_snapshot`: 20
 - `candidate_evaluation_run`: 70
 - `candidate_criterion_result`: 630
 - `risk_reward_result`: 53
-- `broker_recommendation`: 5
+- `broker_recommendation`: 9
 - `data_import_batch`: 103
 - `trade_journal`: 0
 - Latest OHLCV date: 2026-09-22
@@ -78,6 +78,18 @@ Every tracked stock was re-evaluated once with the active `phase5_trend_screen_v
 - Production: 27 new runs (ids 44-70, one per tracked stock), 243 new criterion rows (27 x 9 criteria), 17 new risk/reward rows (only where ATR14, Support20 and Resistance20 exist and 0 < stop < entry < target).
 - Latest classifications: FINAL_CANDIDATE 3, WATCH 4, REJECTED 13, INSUFFICIENT_DATA 7. The 7 INSUFFICIENT_DATA stocks are the six 18-session stocks and INDIGO (12 sessions), none of which has imported fundamentals.
 - Historical runs 1-43, their 387 criteria and risk/reward rows 1-36 are unchanged; every non-candidate table is unchanged.
+
+### ICICI import and scheduler (2026-09-23)
+
+First controlled ICICI Direct import, through `scratch/auto_download_broker_recs_icici.py --import --confirm-production` (committed application workflow, no direct SQL):
+
+- Imported four calls, all `BUY`, `CURRENT`, 12-18 month horizon: CARYSIL (call 2026-08-12, entry 1195, target 1410), ASTRAMICRO (2026-08-11, 1711, 1980), HINDALCO (2026-08-11, 1060, 1240), GLAND (2026-08-11, 2664, 3150). Broker recommendations 5 -> 9; the original five stay `CURRENT`.
+- Provenance: ICICI Direct's own website (`BROKER_WEBSITE`), `VERIFIED_PRIMARY`, each with its official `mailcontent.icicidirect.com` report PDF link. Stop loss and price-at-recommendation are NULL (the page gives no stop and its CMP is a live price, kept only in the evidence text).
+- Pre-import backup (SQLite backup API, all 27 tables identical to production, integrity `ok`, 0 FK violations): `data\backups\swing_trading_pre_icici_import_20260923_141343.db`, SHA-256 `61802c766ea69dc4b3b0f67fdd718747117560b8cd9b6a0be26ff57e1dd4b1cb`. The import also wrote its own automation backup.
+- No OHLCV, fundamentals, candidate evaluation, risk/reward, trade journal or classification row changed: exactly four rows were added to each of `broker_recommendation`, `source_reference`, `recommendation_source` and `recommendation_status_history`, and no existing row changed.
+- Production SHA-256 after the import: `bffa9e78df236d9cf47bdd9e08026cd6ea8769bd5d8d3da04e1660fe590f9049`.
+- Scheduler: `SwingTrading-ICICI-Recs`, Monday to Friday at 20:00, runs `scratch\run_broker_recs_icici.bat` (`--import --confirm-production`) as the interactive user with no stored password, never overlaps itself, and has a 30-minute execution limit. A manual run of the registered task exited 0 and imported nothing (all seven tracked calls already recorded). The 19:00 OHLCV task is not registered on this machine and needs separate approval.
+- Import safeguards: name match of at least 0.9 and unambiguous, mapped rating, valid non-future call date within 400 days, at least 20 page rows, at most 25 writes per run, verified backup first.
 
 Do not modify production merely to make a test pass. Before any authorized production correction or import:
 
@@ -153,6 +165,7 @@ Relevant files:
 - `backend\app\routers\data_sync.py`
 - `frontend\src\pages\DataSync.tsx`
 - `scratch\register_scheduled_tasks.ps1`
+- `scratch\scheduled_task_definitions.ps1`
 
 Required behavior:
 
@@ -165,7 +178,7 @@ Required behavior:
 - Full-market Bhavcopy filters to mapped EQ stocks; unmapped market rows are reported separately from invalid rows.
 - Exact replay must insert zero duplicate OHLCV rows.
 - Fundamentals discovery downloads/reports filings only; it never fabricates or imports metrics.
-- ICICI discovery downloads/reports candidates only; it never inserts recommendations.
+- ICICI discovery is report-only by default; only `--import` (with `--confirm-production` on production) inserts recommendations, under the guards listed in the ICICI section.
 - Scheduled wrappers preserve real exit codes.
 - Task Scheduler uses `IgnoreNew` to prevent overlapping task instances.
 
@@ -178,13 +191,15 @@ Live disposable proof already completed:
 - Disposable copy had 0 duplicate keys, 0 invalid OHLC, 0 negative volume, integrity `ok`, and 0 FK violations.
 - Production was not imported.
 
-Task definitions were validated without registering them:
+Task definitions are validated without registering them:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File 'D:\Swing Trading\scratch\register_scheduled_tasks.ps1' -ValidateOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File 'D:\Swing Trading\scratch\register_scheduled_tasks.ps1' -Task ICICI -WhatIf
 ```
 
-No Windows scheduled tasks were created. Registering tasks changes OS state and requires an explicit user request.
+`register_scheduled_tasks.ps1` never registers implicitly. `-Task ICICI|OHLCV|Fundamentals|All` is required, and Task Scheduler is changed only with `-ConfirmRegistration`; `-WhatIf` and `-ValidateOnly` preview without changing anything. Selecting one task changes only that task. Every task has a bounded execution limit (ICICI 30 minutes, OHLCV 120, Fundamentals 60) and `MultipleInstances = IgnoreNew`. `Fundamentals` is previewable but cannot be registered by the script: no installed PowerShell here has a working `New-ScheduledTaskTrigger -Monthly`, and a monthly trigger cannot be verified without registering one, so register it by hand if wanted.
+
+Only `SwingTrading-ICICI-Recs` is registered (2026-09-23). The 19:00 `SwingTrading-OHLCV-Bhavcopy` task is not registered and needs separate approval. Registering tasks changes OS state and requires an explicit user request.
 
 ## Broker recommendation evidence policy
 
@@ -201,11 +216,11 @@ Rules:
 - Multiple sources for one recommendation must not inflate unique broker count.
 - Preserve revisions/supersession rather than overwriting history.
 
-Current production contains five genuine ICICI Securities recommendations. Do not alter them without explicit authorization.
+Current production contains nine genuine ICICI Securities recommendations: five entered by hand (HDFCBANK, APOLLOHOSP, NRBBEARING, BHARTIARTL, INDIGO) and four imported by the automation on 2026-09-23 (CARYSIL, ASTRAMICRO, HINDALCO, GLAND). Do not alter them without explicit authorization.
 
 ### ICICI Direct
 
-Automated discovery is implemented against ICICI Direct's official public page. The live acceptance run parsed 100 rows. Four false stock-name matches were discovered and fixed; tests now reject those identities. Matched records preserve official ICICI PDF links. Discovery remains non-persistent.
+Automated discovery is implemented against ICICI Direct's official public page. The live acceptance run parsed 100 rows. Four false stock-name matches were discovered and fixed; tests now reject those identities. Matched records preserve official ICICI PDF links. A default run is report-only; `--import` (added in commit `1255a22`) records new and changed calls for tracked stocks, and a production write also needs `--confirm-production`. See "ICICI import and scheduler (2026-09-23)" above for the first import and the scheduled task.
 
 ### Angel One
 

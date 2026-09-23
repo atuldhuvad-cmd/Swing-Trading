@@ -12,9 +12,9 @@ Official Working Path: `D:\Swing Trading`
 
 ## Stage 7 Real-Data Pilot
 
-The production database contains five genuine ICICI Direct recommendations verified from official public ICICI Securities Retail Equity Research PDFs. They were entered through the existing stock and recommendation APIs; no scraper, brokerage API, credential, or downloaded report was added to the repository. Only explicitly published fields are stored. Missing stop loss, live CMP, and other financial metadata remain NULL and display as N/A.
+The production database contains nine genuine ICICI Direct recommendations from official ICICI Securities material: five verified by hand from public Retail Equity Research PDFs and four imported on 2026-09-23 by the ICICI automation from ICICI Direct's own Investing Ideas page. The first five were entered through the existing stock and recommendation APIs; no scraper, brokerage API, credential, or downloaded report was added to the repository. Only explicitly published fields are stored. Missing stop loss, live CMP, and other financial metadata remain NULL and display as N/A.
 
-Primary evidence is marked `VERIFIED_PRIMARY`; reputable attributed publications may be `VERIFIED_SECONDARY`. Provisional or rejected evidence cannot contribute to the candidate universe. The current ICICI pilot covers CARYSIL, ASTRAMICRO, HINDALCO, GLAND, and NRBBEARING.
+Primary evidence is marked `VERIFIED_PRIMARY`; reputable attributed publications may be `VERIFIED_SECONDARY`. Provisional or rejected evidence cannot contribute to the candidate universe. The current ICICI recommendations cover HDFCBANK, APOLLOHOSP, NRBBEARING, BHARTIARTL, INDIGO, CARYSIL, ASTRAMICRO, HINDALCO and GLAND.
 
 To add a real recommendation, verify the company and NSE symbol, add a missing stock through Stock Master, then use Recommendation Entry or the CSV/XLSX import preview and confirmation flow. Attach the official source URL, publication and source date, a traceable extract, and the appropriate verification status. Never infer absent values.
 

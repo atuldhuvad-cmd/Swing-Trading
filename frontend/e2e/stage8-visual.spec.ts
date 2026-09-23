@@ -151,8 +151,17 @@ for (const viewport of viewports) {
         }
 
         if (screen.name === 'Broker Recommendations') {
-          await expect(page.locator('main').getByText('ICICI Direct')).toHaveCount(5);
-          await expect(page.locator('main').getByText('N/A')).toHaveCount(5);
+          // Counts follow the stored recommendations, not a fixed number: one broker label per
+          // card, and one N/A per missing reference price, target or stop.
+          const recs = await (await page.request.get('/api/recommendations')).json();
+          const brokers = await (await page.request.get('/api/brokers')).json();
+          const iciciIds = new Set(brokers.filter((b: { display_name: string }) => b.display_name === 'ICICI Direct').map((b: { broker_id: number }) => b.broker_id));
+          const iciciCards = recs.filter((r: { broker_id: number }) => iciciIds.has(r.broker_id)).length;
+          const missing = recs.reduce((n: number, r: { recommended_price: unknown; target_price: unknown; stop_loss: unknown }) =>
+            n + Number(r.recommended_price == null) + Number(r.target_price == null) + Number(r.stop_loss == null), 0);
+          expect(recs.length).toBeGreaterThan(0);
+          await expect(page.locator('main').getByText('ICICI Direct')).toHaveCount(iciciCards);
+          await expect(page.locator('main').getByText('N/A')).toHaveCount(missing);
         }
 
         if (screen.name === 'Manual Recommendation Entry') {

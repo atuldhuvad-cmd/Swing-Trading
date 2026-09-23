@@ -47,14 +47,14 @@ TABLES = [
 ]
 
 BASELINE = {
-    "sha256": "5ab98238badd90d59c0cb8626af6b55a62e3b73fb9043fa2ac0cfb25adeb3756",
+    "sha256": "bffa9e78df236d9cf47bdd9e08026cd6ea8769bd5d8d3da04e1660fe590f9049",
     "counts": {
         "daily_ohlcv": 5419,
         "fundamental_snapshot": 20,
         "candidate_evaluation_run": 70,
         "candidate_criterion_result": 630,
         "risk_reward_result": 53,
-        "broker_recommendation": 5,
+        "broker_recommendation": 9,
         "data_import_batch": 103,
         "trade_journal": 0,
     },
