@@ -100,6 +100,17 @@ test.describe('Phase 5 production evidence UI', () => {
     await expect(page.getByText('Mandatory evidence unavailable.', { exact: false }).first()).toBeVisible();
     await expect(page.getByText('No core fundamentals collected', { exact: false })).toBeVisible();
     await expect(page.getByText('RR N/A', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('insufficient-data-caution')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Plan Trade' })).toBeVisible();
+
+    await page.goto(`/trades/plan/${missing.stock_id}`, { waitUntil: 'load' });
+    await expect(page.getByTestId('insufficient-data-caution')).toBeVisible();
+    await expect(page.locator('#save-planned-trade')).toBeEnabled();
+    await expect(page.getByText('never applied as your trade size', { exact: false })).toBeVisible();
+    await expect(page.locator('main')).not.toContainText('guaranteed BUY recommendation');
+
+    await page.goto(`/evidence/${finalRow.stock_id}`, { waitUntil: 'load' });
+    await expect(page.getByTestId('insufficient-data-caution')).toHaveCount(0);
   });
 
   test('Criteria and reasons appear in the same order in list and detail', async ({ page, request }) => {

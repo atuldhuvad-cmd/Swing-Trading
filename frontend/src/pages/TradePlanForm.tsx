@@ -119,6 +119,11 @@ export default function TradePlanForm() {
           REJECTED warning: a required Phase 5 trend-screen check failed. You may still save a plan if you choose; this is not a BUY.
         </p>
       )}
+      {hasEval && classification === 'INSUFFICIENT_DATA' && (
+        <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded p-3" data-testid="insufficient-data-caution">
+          INSUFFICIENT_DATA caution: required evidence is missing, so this stock was not screened. You may still save a manual plan; the app does not decide BUY/SELL.
+        </p>
+      )}
       
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
         <div className="min-w-0">

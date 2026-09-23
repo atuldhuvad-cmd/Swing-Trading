@@ -138,6 +138,11 @@ export default function CandidateEvidence() {
             REJECTED warning: a required Phase 5 trend-screen check failed. You may still plan if you choose; this is not a BUY.
           </p>
         )}
+        {hasEval && classification === 'INSUFFICIENT_DATA' && (
+          <p className="text-xs text-amber-800 mt-2 break-words" data-testid="insufficient-data-caution">
+            INSUFFICIENT_DATA caution: required evidence is missing, so this stock was not screened. You may still plan manually; the app does not decide BUY/SELL.
+          </p>
+        )}
         <p className="text-xs text-amber-800 mt-2 break-words">
           Not a guaranteed BUY. Not a trading recommendation. No guaranteed profitability.
         </p>
