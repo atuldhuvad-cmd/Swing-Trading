@@ -27,7 +27,7 @@ Implemented locally:
 - Responsive FastAPI + React Swing Trading application.
 - Genuine OHLCV import, provenance, conflict detection, idempotency, corporate actions, technical indicators, fundamentals, candidate evaluation, risk/reward, evidence API, broker consensus, and trade journal.
 - Data Sync UI/API for NSE OHLCV/Bhavcopy, NSE fundamental-filing discovery, and ICICI Direct recommendation discovery.
-- Broker PDF upload/storage UI/API. Uploading a PDF preserves evidence only; it does not create a recommendation.
+- Broker PDF upload/storage UI/API with a read-only intake preview (SHA-256 duplicates, extracted fields, match/conflict against stored recommendations). Neither uploading nor previewing creates a recommendation.
 - Windows wrapper scripts and optional Task Scheduler registration scripts.
 - Start/stop batch files for local use.
 
@@ -41,18 +41,18 @@ Production database:
 
 `D:\Swing Trading\data\swing_trading.db`
 
-Verified on 2026-09-23, after the controlled production OHLCV catch-up, the post-catch-up candidate refresh and the first ICICI recommendation import:
+Verified on 2026-09-24, after the controlled production OHLCV catch-up, the post-catch-up candidate refresh, the first ICICI recommendation import and the first scheduled OHLCV run (2026-09-23 19:00):
 
-- SHA-256: `bffa9e78df236d9cf47bdd9e08026cd6ea8769bd5d8d3da04e1660fe590f9049`
-- `daily_ohlcv`: 5419
+- SHA-256: `5de2603571b7587851ad1cb14426eec9a387878d05b7f80124f44068a579d54d`
+- `daily_ohlcv`: 5446
 - `fundamental_snapshot`: 20
 - `candidate_evaluation_run`: 70
 - `candidate_criterion_result`: 630
 - `risk_reward_result`: 53
 - `broker_recommendation`: 9
-- `data_import_batch`: 103
+- `data_import_batch`: 109
 - `trade_journal`: 0
-- Latest OHLCV date: 2026-09-22
+- Latest OHLCV date: 2026-09-23
 - Synthetic/test OHLCV: 0
 - Duplicate canonical keys, invalid OHLC, negative volume: 0
 - `PRAGMA integrity_check`: `ok`
@@ -88,7 +88,8 @@ First controlled ICICI Direct import, through `scratch/auto_download_broker_recs
 - Pre-import backup (SQLite backup API, all 27 tables identical to production, integrity `ok`, 0 FK violations): `data\backups\swing_trading_pre_icici_import_20260923_141343.db`, SHA-256 `61802c766ea69dc4b3b0f67fdd718747117560b8cd9b6a0be26ff57e1dd4b1cb`. The import also wrote its own automation backup.
 - No OHLCV, fundamentals, candidate evaluation, risk/reward, trade journal or classification row changed: exactly four rows were added to each of `broker_recommendation`, `source_reference`, `recommendation_source` and `recommendation_status_history`, and no existing row changed.
 - Production SHA-256 after the import: `bffa9e78df236d9cf47bdd9e08026cd6ea8769bd5d8d3da04e1660fe590f9049`.
-- Scheduler: `SwingTrading-ICICI-Recs`, Monday to Friday at 20:00, runs `scratch\run_broker_recs_icici.bat` (`--import --confirm-production`) as the interactive user with no stored password, never overlaps itself, and has a 30-minute execution limit. A manual run of the registered task exited 0 and imported nothing (all seven tracked calls already recorded). The 19:00 OHLCV task is not registered on this machine and needs separate approval.
+- Scheduler: `SwingTrading-ICICI-Recs`, Monday to Friday at 20:00, runs `scratch\run_broker_recs_icici.bat` (`--import --confirm-production`) as the interactive user with no stored password, never overlaps itself, and has a 30-minute execution limit. A manual run of the registered task exited 0 and imported nothing (all seven tracked calls already recorded).
+- OHLCV scheduler: `SwingTrading-OHLCV-Bhavcopy`, Monday to Friday at 19:00, 120-minute limit, same user/overlap settings. Its first scheduled run (2026-09-23 19:00) exited 0 and imported the 2026-09-23 session: 27 EQ `NSE_BHAVCOPY` rows (one per tracked stock), import batches 104-109, 0 duplicates or invalid rows, integrity `ok`, 0 FK violations. Because it runs every weekday, the pinned production SHA in the guards goes stale after each run and must be re-verified before a release gate.
 - Import safeguards: name match of at least 0.9 and unambiguous, mapped rating, valid non-future call date within 400 days, at least 20 page rows, at most 25 writes per run, verified backup first.
 
 Do not modify production merely to make a test pass. Before any authorized production correction or import:
@@ -199,7 +200,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File 'D:\Swing Trading\scratch\re
 
 `register_scheduled_tasks.ps1` never registers implicitly. `-Task ICICI|OHLCV|Fundamentals|All` is required, and Task Scheduler is changed only with `-ConfirmRegistration`; `-WhatIf` and `-ValidateOnly` preview without changing anything. Selecting one task changes only that task. Every task has a bounded execution limit (ICICI 30 minutes, OHLCV 120, Fundamentals 60) and `MultipleInstances = IgnoreNew`. `Fundamentals` is previewable but cannot be registered by the script: no installed PowerShell here has a working `New-ScheduledTaskTrigger -Monthly`, and a monthly trigger cannot be verified without registering one, so register it by hand if wanted.
 
-Only `SwingTrading-ICICI-Recs` is registered (2026-09-23). The 19:00 `SwingTrading-OHLCV-Bhavcopy` task is not registered and needs separate approval. Registering tasks changes OS state and requires an explicit user request.
+Registered tasks: `SwingTrading-ICICI-Recs` (2026-09-23) and `SwingTrading-OHLCV-Bhavcopy` (2026-09-23). `SwingTrading-Fundamentals` is not registered. Registering tasks changes OS state and requires an explicit user request.
 
 ## Broker recommendation evidence policy
 
@@ -265,6 +266,13 @@ Security behavior already implemented:
 - Stored paths must remain inside the upload directory.
 - A corrupt manifest is preserved and treated as an error, not overwritten as an empty manifest.
 - Uploading does not create or change a recommendation.
+- Every stored PDF records its SHA-256; a byte-identical file is refused with HTTP 409 (`DUPLICATE_FILE`). Entries stored before SHA-256 existed stay valid: their hash is computed from the stored file when needed and the manifest is not rewritten. Optional `discovery_source` / `discovery_url` (for example Trendlyne) are kept separate from the broker, which is the author.
+
+### Broker PDF intake preview
+
+- `backend\app\services\broker_pdf_extraction.py` reads report text with `pypdf` (pinned in `requirements.txt`) and proposes fields for Motilal Oswal, ICICI Securities and Axis Securities layouts. Every field has a status (`KNOWN`, `UNKNOWN`, `AMBIGUOUS`, `NOT_STATED`); nothing is guessed. Entry range, stop loss and horizon are read only when the report states them for the call; a horizon that appears only in the broker's rating legend stays empty with a warning. The report CMP is proposed as `recommended_price`, never as an entry price.
+- `backend\app\services\broker_pdf_intake_service.py` and `POST /api/broker-uploads/preview` are strictly read-only (no file, manifest or database write). Actions: `NEW`, `NEW_REVISION`, `ATTACH_SOURCE`, `EXACT_DUPLICATE`, `CONFLICT_REVIEW_REQUIRED`, `UNKNOWN_STOCK`, `UNKNOWN_BROKER`, `REVIEW_REQUIRED`; `duplicate_file` is reported separately. The canonical source is `BROKER_RESEARCH` with the broker as publication; `VERIFIED_PRIMARY` is only proposed until the visible PDF is checked.
+- There is no confirm/import step for PDFs yet. A later import must be separately authorised.
 
 ## Core application invariants
 

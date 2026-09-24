@@ -1,9 +1,12 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from typing import List, Optional
+from sqlalchemy.orm import Session
+from typing import Any, Dict, List, Optional
 
+from app.database import get_db
 from app.schemas.broker_upload import BrokerUploadOut
 from app.services import broker_upload_service as svc
+from app.services import broker_pdf_intake_service as intake
 
 router = APIRouter(prefix="/api/broker-uploads", tags=["broker-uploads"])
 
@@ -19,6 +22,8 @@ async def create_upload(
     broker_name: str = Form(...),
     stock_symbol: Optional[str] = Form(None),
     note: Optional[str] = Form(None),
+    discovery_source: Optional[str] = Form(None),
+    discovery_url: Optional[str] = Form(None),
 ):
     content = await file.read(svc.MAX_FILE_SIZE_BYTES + 1)
     try:
@@ -29,6 +34,34 @@ async def create_upload(
             content_type=file.content_type,
             stock_symbol=stock_symbol,
             note=note,
+            discovery_source=discovery_source,
+            discovery_url=discovery_url,
+        )
+    except svc.DuplicateUploadError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except svc.BrokerUploadError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/preview")
+async def preview_upload(
+    file: UploadFile = File(...),
+    stock_symbol: Optional[str] = Form(None),
+    discovery_source: Optional[str] = Form(None),
+    discovery_url: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Read-only preview: nothing is stored, imported or written."""
+    content = await file.read(svc.MAX_FILE_SIZE_BYTES + 1)
+    try:
+        return intake.preview_pdf(
+            db,
+            content=content,
+            original_filename=file.filename or "upload.pdf",
+            content_type=file.content_type,
+            stock_symbol_hint=stock_symbol,
+            discovery_source=discovery_source,
+            discovery_url=discovery_url,
         )
     except svc.BrokerUploadError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -10,3 +10,7 @@ class BrokerUploadOut(BaseModel):
     original_filename: str
     size_bytes: int
     uploaded_at: str
+    # Added later; entries stored before these existed simply omit them.
+    sha256: Optional[str] = None
+    discovery_source: Optional[str] = None
+    discovery_url: Optional[str] = None

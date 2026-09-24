@@ -79,13 +79,26 @@ export const dataSyncApi = {
 
 export const brokerUploadsApi = {
   list: () => api.get('/broker-uploads').then(res => res.data),
-  upload: (file: File, brokerName: string, stockSymbol?: string, note?: string) => {
+  upload: (file: File, brokerName: string, stockSymbol?: string, note?: string, discoverySource?: string, discoveryUrl?: string) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('broker_name', brokerName);
     if (stockSymbol) formData.append('stock_symbol', stockSymbol);
     if (note) formData.append('note', note);
+    if (discoverySource) formData.append('discovery_source', discoverySource);
+    if (discoveryUrl) formData.append('discovery_url', discoveryUrl);
     return api.post('/broker-uploads', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }).then(res => res.data);
+  },
+  // Read-only: nothing is stored or imported.
+  preview: (file: File, stockSymbol?: string, discoverySource?: string, discoveryUrl?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (stockSymbol) formData.append('stock_symbol', stockSymbol);
+    if (discoverySource) formData.append('discovery_source', discoverySource);
+    if (discoveryUrl) formData.append('discovery_url', discoveryUrl);
+    return api.post('/broker-uploads/preview', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     }).then(res => res.data);
   },

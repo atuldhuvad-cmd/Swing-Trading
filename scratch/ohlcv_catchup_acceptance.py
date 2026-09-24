@@ -47,18 +47,18 @@ TABLES = [
 ]
 
 BASELINE = {
-    "sha256": "bffa9e78df236d9cf47bdd9e08026cd6ea8769bd5d8d3da04e1660fe590f9049",
+    "sha256": "5de2603571b7587851ad1cb14426eec9a387878d05b7f80124f44068a579d54d",
     "counts": {
-        "daily_ohlcv": 5419,
+        "daily_ohlcv": 5446,
         "fundamental_snapshot": 20,
         "candidate_evaluation_run": 70,
         "candidate_criterion_result": 630,
         "risk_reward_result": 53,
         "broker_recommendation": 9,
-        "data_import_batch": 103,
+        "data_import_batch": 109,
         "trade_journal": 0,
     },
-    "latest_ohlcv_date": "2026-09-22",
+    "latest_ohlcv_date": "2026-09-23",
 }
 
 # Same definition the earlier Batch A/B forensic scripts use.
