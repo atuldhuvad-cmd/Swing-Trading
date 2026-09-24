@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
@@ -27,7 +28,9 @@ async def create_upload(
 ):
     content = await file.read(svc.MAX_FILE_SIZE_BYTES + 1)
     try:
-        return svc.save_upload(
+        # Off the event loop: saving waits on the manifest lock and disk I/O.
+        return await run_in_threadpool(
+            svc.save_upload,
             broker_name=broker_name,
             original_filename=file.filename or "upload.pdf",
             content=content,
@@ -39,6 +42,8 @@ async def create_upload(
         )
     except svc.DuplicateUploadError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except svc.UploadStorageError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except svc.BrokerUploadError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -54,7 +59,9 @@ async def preview_upload(
     """Read-only preview: nothing is stored, imported or written."""
     content = await file.read(svc.MAX_FILE_SIZE_BYTES + 1)
     try:
-        return intake.preview_pdf(
+        # Off the event loop: the PDF is parsed in a separate, time-limited process.
+        return await run_in_threadpool(
+            intake.preview_pdf,
             db,
             content=content,
             original_filename=file.filename or "upload.pdf",

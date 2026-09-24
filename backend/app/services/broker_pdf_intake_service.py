@@ -15,16 +15,23 @@ Preview actions
   NEW                        no equivalent recommendation; a new one may be created
   NEW_REVISION               newer report than the CURRENT one for this stock+broker;
                              may supersede it, keeping history
-  ATTACH_SOURCE              same stock+broker+date+rating and identical economic fields;
-                             attach this PDF as primary evidence, create nothing
-  EXACT_DUPLICATE            as ATTACH_SOURCE, and this PDF is already stored and the
-                             recommendation already carries broker-research evidence
+  ATTACH_SOURCE              complete match (see below); attach this PDF as primary
+                             evidence, create nothing
+  EXACT_DUPLICATE            complete match, and a source linked to that recommendation
+                             already carries this exact PDF (same document_sha256)
   CONFLICT_REVIEW_REQUIRED   same identity but a stated field (CMP, target, entry, stop,
                              horizon or rating) differs; nothing is attached or overwritten
   UNKNOWN_STOCK              company is not in stock_master; archive only
   UNKNOWN_BROKER             broker not identified or not in broker_master; review only
-  REVIEW_REQUIRED            a required field is missing/ambiguous, or the report is older
-                             than the CURRENT recommendation
+  REVIEW_REQUIRED            a required field is missing/ambiguous, a stored field is not
+                             stated in the report, the PDF is already linked to another
+                             recommendation, or the report is older than the CURRENT one
+
+Complete match: stock, broker, report date, normalized rating, report CMP and target
+are all KNOWN in the report and equal to the stored recommendation. Optional fields
+(entry low/high, stop loss, horizon) must match when both sides state them; an
+ambiguous optional field, or a stored optional field the report does not state
+(UNSTATED_STORED_FIELD), needs review. Missing values are never filled in.
 ``duplicate_file`` is reported separately: a byte-identical PDF is stored only once.
 """
 from __future__ import annotations
@@ -42,12 +49,15 @@ from app.models import (
 )
 from app.services import broker_upload_service as uploads
 from app.services.broker_pdf_extraction import (
-    AMBIGUOUS, KNOWN, NOT_STATED, UNKNOWN, Extraction, PdfExtractionError, extract_fields,
+    AMBIGUOUS, KNOWN, NOT_STATED, UNKNOWN, Extraction, PdfExtractionError, extract_fields_isolated,
 )
 
 CANONICAL_SOURCE_TYPE = "BROKER_RESEARCH"
 PROPOSED_VERIFICATION = "VERIFIED_PRIMARY"
 VERIFICATION_STATE = "PENDING_VISUAL_CONFIRMATION"
+
+MANDATORY_REPORT_FIELDS = ("report_cmp", "target")
+OPTIONAL_REPORT_FIELDS = ("entry_low", "entry_high", "stop_loss", "time_horizon")
 
 _SUFFIXES = {"ltd", "limited", "co", "company", "corp", "corporation", "inc", "plc", "the"}
 _PRICE_TOLERANCE = Decimal("0.005")
@@ -140,6 +150,14 @@ def _economic_diffs(ex: Extraction, rec: BrokerRecommendation) -> tuple[list[dic
     return diffs, unstated
 
 
+def _recommendations_linked_to_document(db: Session, sha: str) -> set[int]:
+    """Recommendations whose linked source carries exactly this PDF."""
+    rows = db.query(RecommendationSource.recommendation_id).join(
+        SourceReference, RecommendationSource.source_reference_id == SourceReference.source_reference_id
+    ).filter(SourceReference.document_sha256 == sha).all()
+    return {r[0] for r in rows}
+
+
 def _has_primary_research(db: Session, rec_id: int) -> bool:
     return db.query(SourceReference).join(
         RecommendationSource, RecommendationSource.source_reference_id == SourceReference.source_reference_id
@@ -213,7 +231,7 @@ def preview_pdf(
         return result
 
     try:
-        ex = extract_fields(content)
+        ex = extract_fields_isolated(content)
     except PdfExtractionError as exc:
         raise uploads.BrokerUploadError(str(exc)) from exc
     warnings = list(ex.warnings)
@@ -249,12 +267,16 @@ def preview_pdf(
             warnings.append(f"MISSING_{name.upper()}: {getattr(ex, name).status}")
 
     existing, action, supersedes, diffs, unstated = None, None, None, [], []
+    linked_recs = _recommendations_linked_to_document(db, sha)
     if broker is None:
         action = "UNKNOWN_BROKER"
     elif stock is None:
         action = "UNKNOWN_STOCK" if stock_status == UNKNOWN else "REVIEW_REQUIRED"
-    elif not required_ok or any(getattr(ex, f).status == AMBIGUOUS for f in ("report_cmp", "target", "entry_low", "stop_loss")):
+    elif not required_ok or any(getattr(ex, f).status == AMBIGUOUS for f in MANDATORY_REPORT_FIELDS + OPTIONAL_REPORT_FIELDS):
         action = "REVIEW_REQUIRED"
+        for f in OPTIONAL_REPORT_FIELDS:
+            if getattr(ex, f).status == AMBIGUOUS:
+                warnings.append(f"AMBIGUOUS_OPTIONAL_FIELD: {f}")
     else:
         same_day = [r for r in db.query(BrokerRecommendation).filter(
             BrokerRecommendation.stock_id == stock.stock_id, BrokerRecommendation.broker_id == broker.broker_id,
@@ -266,9 +288,14 @@ def preview_pdf(
                 diffs = [{"field": "normalized_rating", "report": normalized, "stored": rec.normalized_rating}]
             else:
                 diffs, unstated = _economic_diffs(ex, rec)
+            missing = [f for f in MANDATORY_REPORT_FIELDS if getattr(ex, f).status != KNOWN]
             if diffs:
                 action = "CONFLICT_REVIEW_REQUIRED"
-            elif stored and _has_primary_research(db, rec.recommendation_id):
+            elif missing or unstated:
+                action = "REVIEW_REQUIRED"
+                warnings.extend(f"MISSING_MANDATORY_FIELD: {f} is not stated in this report" for f in missing)
+                warnings.extend(f"UNSTATED_STORED_FIELD: {u}" for u in unstated)
+            elif rec.recommendation_id in linked_recs:
                 action = "EXACT_DUPLICATE"
             else:
                 action = "ATTACH_SOURCE"
@@ -287,10 +314,17 @@ def preview_pdf(
                 action, existing = "REVIEW_REQUIRED", _rec_summary(current)
                 warnings.append("OLDER_THAN_CURRENT_RECOMMENDATION: a newer call from this broker is already CURRENT")
 
+    other_links = sorted(linked_recs - ({existing["recommendation_id"]} if existing else set()))
+    if other_links and action not in ("EXACT_DUPLICATE", "CONFLICT_REVIEW_REQUIRED", "UNKNOWN_BROKER", "UNKNOWN_STOCK"):
+        action = "REVIEW_REQUIRED"
+        warnings.append(f"DOCUMENT_ALREADY_LINKED: this exact PDF is already evidence for recommendation(s) {', '.join(map(str, other_links))}")
+    if action == "EXACT_DUPLICATE" and not stored:
+        warnings.append("LINKED_PDF_NOT_IN_LOCAL_UPLOADS: the recommendation cites this PDF but no local copy is stored")
     if file_info["duplicate_file"]:
         warnings.append(f"DUPLICATE_FILE: identical PDF already stored as upload {file_info['duplicate_of_upload_id']}")
     result.update({
         "action": action,
+        "document_linked_recommendation_ids": sorted(linked_recs),
         "existing_match": existing,
         "supersedes_recommendation_id": supersedes,
         "differences": diffs,

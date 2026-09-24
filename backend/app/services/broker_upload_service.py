@@ -13,12 +13,23 @@ the stored file when needed and the manifest is not rewritten.
 
 Discovery provenance (for example "Trendlyne" plus the page URL, when it is
 known) is kept separate from the broker, which is the report's author.
+
+The manifest is only ever replaced atomically (temporary file in the same
+directory, flush + fsync, ``os.replace``), so a reader sees the old or the new
+index, never a partial one. The whole read-check-write of an upload runs under
+an in-process lock and a cross-process file lock, so concurrent uploads cannot
+lose entries or store the same PDF twice.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import re
+import tempfile
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,10 +45,18 @@ MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB -- generous for a broker PDF rep
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
 MAX_DISCOVERY_SOURCE_LEN = 100
 MAX_DISCOVERY_URL_LEN = 1000
+LOCK_TIMEOUT_SECONDS = 30.0
+_REPLACE_RETRY_SECONDS = 2.0   # Windows: a reader may briefly hold the manifest open
+
+_THREAD_LOCK = threading.RLock()
 
 
 class BrokerUploadError(Exception):
     """Raised for a bad request (validation) -- the router maps this to HTTP 400."""
+
+
+class UploadStorageError(BrokerUploadError):
+    """The report or index could not be saved -- the router maps this to HTTP 500."""
 
 
 class DuplicateUploadError(BrokerUploadError):
@@ -98,17 +117,93 @@ def validate_discovery(discovery_source: str | None, discovery_url: str | None) 
 
 
 def _read_manifest() -> list[dict[str, Any]]:
-    if not MANIFEST_PATH.exists():
-        return []
-    try:
-        return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        raise BrokerUploadError("Upload index could not be read; existing reports were preserved") from exc
+    # Lock-free: the manifest is only ever replaced atomically. On Windows a
+    # concurrent os.replace can briefly deny access, so retry for a moment.
+    deadline = time.monotonic() + _REPLACE_RETRY_SECONDS
+    while True:
+        if not MANIFEST_PATH.exists():
+            return []
+        try:
+            return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except PermissionError as exc:
+            if time.monotonic() >= deadline:
+                raise BrokerUploadError("Upload index could not be read; existing reports were preserved") from exc
+            time.sleep(0.02)
+        except (json.JSONDecodeError, OSError) as exc:
+            raise BrokerUploadError("Upload index could not be read; existing reports were preserved") from exc
+
+
+def _lock_file(fh) -> None:
+    deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+    if os.name == "nt":
+        import msvcrt
+        while True:
+            try:
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise UploadStorageError("Upload index is busy; try again shortly") from None
+                time.sleep(0.05)
+    import fcntl
+    while True:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise UploadStorageError("Upload index is busy; try again shortly") from None
+            time.sleep(0.05)
+
+
+def _unlock_file(fh) -> None:
+    if os.name == "nt":
+        import msvcrt
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def _manifest_lock():
+    """Serialise manifest writers across threads and processes."""
+    with _THREAD_LOCK:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        with open(UPLOAD_DIR / ".manifest.lock", "a+b") as fh:
+            _lock_file(fh)
+            try:
+                yield
+            finally:
+                _unlock_file(fh)
 
 
 def _write_manifest(entries: list[dict[str, Any]]) -> None:
+    """Atomically replace the manifest; the previous one survives any failure."""
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    MANIFEST_PATH.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(prefix=".manifest.", suffix=".tmp", dir=UPLOAD_DIR)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(entries, indent=2))
+            fh.flush()
+            os.fsync(fh.fileno())
+        deadline = time.monotonic() + _REPLACE_RETRY_SECONDS
+        while True:
+            try:
+                os.replace(tmp, MANIFEST_PATH)
+                break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.02)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def list_uploads() -> list[dict[str, Any]]:
@@ -166,34 +261,47 @@ def save_upload(
     safe_name = validate_pdf(original_filename, content, content_type)
     source, url = validate_discovery(discovery_source, discovery_url)
 
-    entries = _read_manifest()
     sha = sha256_hex(content)
-    for existing in entries:
-        if entry_sha256(existing) == sha:
-            raise DuplicateUploadError(existing)
+    with _manifest_lock():
+        entries = _read_manifest()
+        for existing in entries:
+            if entry_sha256(existing) == sha:
+                raise DuplicateUploadError(existing)
 
-    now = datetime.now(timezone.utc)
-    upload_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-    broker_dir = UPLOAD_DIR / _slugify(broker_name, fallback="broker")
-    broker_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{upload_id}_{safe_name}"
-    stored_full_path = broker_dir / stored_name
-    stored_full_path.write_bytes(content)
-
-    entry = {
-        "upload_id": upload_id,
-        "broker_name": broker_name,
-        "stock_symbol": (stock_symbol or "").strip() or None,
-        "note": (note or "").strip() or None,
-        "original_filename": safe_name,
-        "stored_path": str(stored_full_path.relative_to(BASE_DIR)).replace("\\", "/"),
-        "size_bytes": len(content),
-        "uploaded_at": now.isoformat(),
-        "sha256": sha,
-        "discovery_source": source,
-        "discovery_url": url,
-    }
-
-    entries.append(entry)
-    _write_manifest(entries)
+        now = datetime.now(timezone.utc)
+        upload_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        broker_dir = UPLOAD_DIR / _slugify(broker_name, fallback="broker")
+        stored_full_path = broker_dir / f"{upload_id}_{safe_name}"
+        entry = {
+            "upload_id": upload_id,
+            "broker_name": broker_name,
+            "stock_symbol": (stock_symbol or "").strip() or None,
+            "note": (note or "").strip() or None,
+            "original_filename": safe_name,
+            "stored_path": str(stored_full_path.relative_to(BASE_DIR)).replace("\\", "/"),
+            "size_bytes": len(content),
+            "uploaded_at": now.isoformat(),
+            "sha256": sha,
+            "discovery_source": source,
+            "discovery_url": url,
+        }
+        created = False
+        try:
+            broker_dir.mkdir(parents=True, exist_ok=True)
+            with open(stored_full_path, "xb") as fh:  # never overwrites an existing file
+                created = True
+                fh.write(content)
+                fh.flush()
+                os.fsync(fh.fileno())
+        except OSError as exc:
+            if created:  # remove only a file this call created
+                with contextlib.suppress(OSError):
+                    stored_full_path.unlink()
+            raise UploadStorageError("The report could not be saved; nothing was stored") from exc
+        try:
+            _write_manifest(entries + [entry])
+        except OSError as exc:
+            with contextlib.suppress(OSError):
+                stored_full_path.unlink()
+            raise UploadStorageError("Upload index could not be saved; the report was not stored") from exc
     return entry

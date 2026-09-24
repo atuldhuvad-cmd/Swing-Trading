@@ -1,6 +1,7 @@
 from sqlalchemy import Numeric, Date, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from datetime import datetime
+import re
 from .database import Base
 
 class StockMaster(Base):
@@ -136,12 +137,29 @@ class SourceReference(Base):
     verified_at = Column(DateTime, nullable=True)
     verification_notes = Column(Text, nullable=True)
     import_batch_id = Column(Integer, ForeignKey('import_batch.batch_id'), nullable=True)
+    # PDF provenance: the exact document (SHA-256 of its bytes) and the local
+    # upload that holds it. NULL for sources without a hashed document; never inferred.
+    document_sha256 = Column(String(64), nullable=True, index=True)
+    local_upload_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         CheckConstraint(verification_status.in_(['VERIFIED_PRIMARY', 'VERIFIED_SECONDARY', 'PROVISIONAL', 'REJECTED']), name='check_verification_status'),
     )
+
+    @validates('document_sha256')
+    def _validate_document_sha256(self, key, value):
+        if value is not None and not re.fullmatch(r'[0-9a-f]{64}', value):
+            raise ValueError('document_sha256 must be 64 lowercase hex characters')
+        return value
+
+    @validates('local_upload_id')
+    def _validate_local_upload_id(self, key, value):
+        # An upload id, never a filesystem path.
+        if value is not None and not re.fullmatch(r'\d{8}_\d{6}_[0-9a-f]{8}', value):
+            raise ValueError('local_upload_id must be an upload id such as 20260903_203319_1efbd821')
+        return value
 
 class RecommendationSource(Base):
     __tablename__ = 'recommendation_source'

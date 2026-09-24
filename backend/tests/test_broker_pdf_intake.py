@@ -78,17 +78,20 @@ def ids(db, sym=None, broker=None):
     return stock, b
 
 
-def add_rec(db, sym, broker, day, *, cmp, tp, entry=None, research=False, rating="BUY", status="CURRENT"):
+def add_rec(db, sym, broker, day, *, cmp, tp, entry=None, stop=None, horizon=None, research=False,
+            sha=None, rating="BUY", status="CURRENT"):
     stock, b = ids(db, sym, broker)
     rec = BrokerRecommendation(stock_id=stock.stock_id, broker_id=b.broker_id,
                                recommendation_date=datetime.fromisoformat(day), original_rating=rating,
                                normalized_rating=rating, recommended_price=cmp, target_price=tp,
-                               entry_price_low=entry, entry_price_high=entry, lifecycle_status=status)
+                               entry_price_low=entry, entry_price_high=entry, stop_loss=stop,
+                               time_horizon_text=horizon, lifecycle_status=status)
     db.add(rec)
     db.flush()
-    if research:
+    if research or sha:
         st = db.query(SourceTypeMaster).filter_by(type_name="BROKER_RESEARCH").one()
-        src = SourceReference(source_type_id=st.source_type_id, publication_name=broker, verification_status="VERIFIED_PRIMARY")
+        src = SourceReference(source_type_id=st.source_type_id, publication_name=broker,
+                              verification_status="VERIFIED_PRIMARY", document_sha256=sha)
         db.add(src)
         db.flush()
         db.add(RecommendationSource(recommendation_id=rec.recommendation_id, source_reference_id=src.source_reference_id))
@@ -165,12 +168,49 @@ def test_exact_match_proposes_source_attachment_only(intake_env):
     assert r["existing_match"]["recommendation_id"]
 
 
-def test_exact_match_already_stored_with_primary_evidence_is_exact_duplicate(intake_env):
+def test_exact_duplicate_requires_this_pdf_linked_to_the_recommendation(intake_env):
     content = icici()
     uploads.save_upload(broker_name="ICICI Securities", original_filename="x.pdf", content=content,
                         content_type="application/pdf")
+    rec = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920,
+                  sha=hashlib.sha256(content).hexdigest())
+    r = preview(intake_env, content)
+    assert r["action"] == "EXACT_DUPLICATE"
+    assert r["document_linked_recommendation_ids"] == [rec.recommendation_id]
+
+
+def test_linked_pdf_without_local_copy_is_still_exact_duplicate_with_warning(intake_env):
+    content = icici()
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920,
+            sha=hashlib.sha256(content).hexdigest())
+    r = preview(intake_env, content)
+    assert r["action"] == "EXACT_DUPLICATE"
+    assert any(w.startswith("LINKED_PDF_NOT_IN_LOCAL_UPLOADS") for w in r["warnings"])
+
+
+def test_stored_pdf_and_unrelated_primary_source_are_not_exact_duplicate(intake_env):
+    content = icici()
+    # Archived under an unrelated label, never linked; the recommendation's evidence is another document.
+    uploads.save_upload(broker_name="Other Broker", stock_symbol="RELIANCE", original_filename="x.pdf",
+                        content=content, content_type="application/pdf")
     add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, research=True)
-    assert preview(intake_env, content)["action"] == "EXACT_DUPLICATE"
+    r = preview(intake_env, content)
+    assert r["action"] == "ATTACH_SOURCE" and r["file"]["duplicate_file"] is True
+    assert any(w.startswith("RECOMMENDATION_ALREADY_HAS_BROKER_RESEARCH_EVIDENCE") for w in r["warnings"])
+
+
+def test_source_linked_to_a_different_pdf_is_not_exact_duplicate(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, sha="0" * 64)
+    assert preview(intake_env, icici())["action"] == "ATTACH_SOURCE"
+
+
+def test_pdf_already_linked_to_another_recommendation_needs_review(intake_env):
+    content = motilal()
+    other = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920,
+                    sha=hashlib.sha256(content).hexdigest())
+    r = preview(intake_env, content)  # would otherwise be NEW for ADANIENT / Motilal Oswal
+    assert r["action"] == "REVIEW_REQUIRED" and r["proposed_recommendation"] is None
+    assert any(w.startswith("DOCUMENT_ALREADY_LINKED") and str(other.recommendation_id) in w for w in r["warnings"])
 
 
 def test_economic_conflict_for_same_identity_requires_review_and_writes_nothing(intake_env):
@@ -242,6 +282,111 @@ def test_ambiguous_prices_require_review(intake_env):
     assert r["extraction"]["report_cmp"]["status"] == "AMBIGUOUS"
     assert r["action"] == "REVIEW_REQUIRED"
     assert any(w.startswith("AMBIGUOUS_REPORT_CMP") for w in r["warnings"])
+
+
+# ---------------------------------------------------------------- complete-match policy for ATTACH_SOURCE
+
+def icici_call(cmp_line="CMP: INR 720 Target Price: INR 920 28%", extra=()):
+    """ICICI layout with a free-form price line and optional extra lines (synthetic)."""
+    return make_pdf([
+        ["Please refer to important disclosures at the end of this report", "BUY (Maintain)",
+         f"{cmp_line} ICICI Securities Limited is the author and distributor of this report",
+         "31 August 2026 India | Equity Research | Company Update", "HDFC Bank", "Banking",
+         "Ravi Sample ravi.sample@icicisecurities.com", *extra],
+        ["ICICI Securities Limited SEBI Registration INZ000183631"],
+    ])
+
+
+def test_complete_match_attaches_source(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920,
+            entry=715, stop=680, horizon="3 months")
+    r = preview(intake_env, icici_call(extra=("Entry range: INR 715", "Stop loss: INR 680", "Investment horizon: 3 months")))
+    assert r["action"] == "ATTACH_SOURCE" and r["differences"] == [] and r["not_stated_in_report"] == []
+
+
+def test_missing_target_cannot_attach(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    r = preview(intake_env, icici_call(cmp_line="CMP: INR 720"))
+    assert r["extraction"]["target"]["status"] == "UNKNOWN"
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert "MISSING_MANDATORY_FIELD: target is not stated in this report" in r["warnings"]
+
+
+def test_missing_cmp_and_target_cannot_attach(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    r = preview(intake_env, icici_call(cmp_line="Rating unchanged"))
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert {w for w in r["warnings"] if w.startswith("MISSING_MANDATORY_FIELD")} == {
+        "MISSING_MANDATORY_FIELD: report_cmp is not stated in this report",
+        "MISSING_MANDATORY_FIELD: target is not stated in this report"}
+
+
+def test_missing_mandatory_fields_on_both_sides_still_cannot_attach(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=None, tp=None)
+    r = preview(intake_env, icici_call(cmp_line="Rating unchanged"))
+    assert r["action"] == "REVIEW_REQUIRED"
+
+
+def test_stored_entry_absent_from_pdf_needs_review(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, entry=725)
+    r = preview(intake_env, icici_call())
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert any(w.startswith("UNSTATED_STORED_FIELD: entry_low stored as 725") for w in r["warnings"])
+    assert r["proposed_recommendation"] is None  # nothing is filled in
+
+
+def test_stored_stop_and_horizon_absent_from_pdf_need_review(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, stop=680, horizon="3 months")
+    r = preview(intake_env, icici_call())
+    assert r["action"] == "REVIEW_REQUIRED"
+    unstated = [w for w in r["warnings"] if w.startswith("UNSTATED_STORED_FIELD")]
+    assert any("stop_loss" in w for w in unstated) and any("time_horizon" in w for w in unstated)
+
+
+def test_ambiguous_horizon_needs_review(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    r = preview(intake_env, icici_call(extra=("Investment horizon: 3 months", "Holding horizon: 12 months")))
+    assert r["extraction"]["time_horizon"]["status"] == "AMBIGUOUS"
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert "AMBIGUOUS_OPTIONAL_FIELD: time_horizon" in r["warnings"]
+
+
+def test_ambiguous_entry_high_needs_review(intake_env, monkeypatch):
+    from app.services import broker_pdf_intake_service as intake
+    from app.services.broker_pdf_extraction import AMBIGUOUS, Field
+    real = intake.extract_fields_isolated
+
+    def only_entry_high_ambiguous(content):
+        ex = real(content)
+        ex.entry_low, ex.entry_high = Field(715, "KNOWN"), Field(None, AMBIGUOUS)
+        return ex
+
+    monkeypatch.setattr(intake, "extract_fields_isolated", only_entry_high_ambiguous)
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, entry=715)
+    r = preview(intake_env, icici_call())
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert "AMBIGUOUS_OPTIONAL_FIELD: entry_high" in r["warnings"]
+
+
+def test_ambiguous_entry_range_from_report_needs_review(intake_env):
+    ex = extract_fields(icici_call(extra=("Entry range: INR 715 - INR 720", "Entry range: INR 715 - INR 725")))
+    assert ex.entry_high.status == "AMBIGUOUS"
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    r = preview(intake_env, icici_call(extra=("Entry range: INR 715 - INR 720", "Entry range: INR 715 - INR 725")))
+    assert r["action"] == "REVIEW_REQUIRED"
+
+
+@pytest.mark.parametrize("stored,field", [
+    ({"cmp": 720, "tp": 950}, "target"),
+    ({"cmp": 700, "tp": 920}, "report_cmp (recommended_price)"),
+    ({"cmp": 720, "tp": 920, "stop": 650}, "stop_loss"),
+    ({"cmp": 720, "tp": 920, "horizon": "12 months"}, "time_horizon"),
+])
+def test_conflicting_mandatory_or_optional_value_is_conflict(intake_env, stored, field):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", **stored)
+    r = preview(intake_env, icici_call(extra=("Stop loss: INR 680", "Investment horizon: 3 months")))
+    assert r["action"] == "CONFLICT_REVIEW_REQUIRED"
+    assert field in {d["field"] for d in r["differences"]}
 
 
 # ---------------------------------------------------------------- input safety

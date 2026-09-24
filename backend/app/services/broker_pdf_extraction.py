@@ -14,10 +14,15 @@ Report text is treated as data only.
 from __future__ import annotations
 
 import io
+import json
 import re
+import subprocess
+import sys
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader
@@ -29,6 +34,11 @@ AMBIGUOUS = "AMBIGUOUS"      # more than one distinct value found
 NOT_STATED = "NOT_STATED"    # optional field the report does not state
 
 MAX_PAGES = 60
+MAX_TEXT_CHARS = 1_000_000        # extracted text across all read pages
+PARSE_TIMEOUT_SECONDS = 30.0      # the isolated parser is killed after this
+MAX_CONCURRENT_PARSES = 2         # at most this many parser processes at once
+_WORKER_PATH = Path(__file__).with_name("pdf_text_worker.py")
+_PARSE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_PARSES)
 
 # Each broker needs at least two independent signatures before it is identified.
 BROKER_SIGNATURES: dict[str, list[str]] = {
@@ -65,7 +75,17 @@ _CORE_RATINGS = ("STRONG BUY", "BUY", "ACCUMULATE", "ADD", "HOLD", "NEUTRAL", "R
 
 
 class PdfExtractionError(Exception):
-    """The file cannot be read as a PDF at all."""
+    """The file cannot be read as a PDF at all, or exceeds a parsing limit.
+
+    Messages are fixed, client-safe text: no stack trace, no local path.
+    """
+
+
+UNREADABLE_MESSAGE = "File could not be read as a PDF"
+TIMEOUT_MESSAGE = "PDF_PARSE_TIMEOUT: the PDF took too long to read and was rejected"
+TEXT_LIMIT_MESSAGE = "PDF_TOO_COMPLEX: the PDF exceeds the text or memory limit and was rejected"
+PARSER_UNAVAILABLE_MESSAGE = "PDF_PARSER_UNAVAILABLE: the PDF reader could not be started"
+BUSY_MESSAGE = "PDF_PARSER_BUSY: other PDFs are being read; try again shortly"
 
 
 @dataclass
@@ -345,8 +365,62 @@ def _company(p1: str, p2: str) -> Field:
 
 # ---------------------------------------------------------------- entry point
 
+def read_pdf_pages_isolated(content: bytes) -> tuple[list[str], bool, bool]:
+    """Read page text in a separate, killable process.
+
+    Returns (page texts, encrypted, page limit reached). Raises PdfExtractionError
+    with a client-safe message on timeout, resource limit or an unreadable file.
+    """
+    if not _PARSE_SLOTS.acquire(timeout=PARSE_TIMEOUT_SECONDS):
+        raise PdfExtractionError(BUSY_MESSAGE)
+    try:
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, "-I", str(_WORKER_PATH), str(MAX_PAGES), str(MAX_TEXT_CHARS)],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError:
+            raise PdfExtractionError(PARSER_UNAVAILABLE_MESSAGE) from None
+        try:
+            out, _ = proc.communicate(content, timeout=PARSE_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise PdfExtractionError(TIMEOUT_MESSAGE) from None
+        finally:
+            if proc.poll() is None:  # never leave a parser behind
+                proc.kill()
+                proc.wait()
+    finally:
+        _PARSE_SLOTS.release()
+    try:
+        result = json.loads(out.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        result = None
+    if not isinstance(result, dict):  # crashed or killed (for example out of memory)
+        raise PdfExtractionError(TEXT_LIMIT_MESSAGE if proc.returncode else UNREADABLE_MESSAGE)
+    if not result.get("ok"):
+        raise PdfExtractionError(TEXT_LIMIT_MESSAGE if result.get("error") == "TEXT_LIMIT" else UNREADABLE_MESSAGE)
+    return [str(p) for p in result.get("pages", [])], bool(result.get("encrypted")), bool(result.get("page_limit_reached"))
+
+
 def extract_fields(content: bytes) -> Extraction:
+    """In-process extraction (trusted callers and tests)."""
     pages, encrypted = read_pdf_pages(content)
+    return fields_from_pages(pages, encrypted)
+
+
+def extract_fields_isolated(content: bytes) -> Extraction:
+    """Extraction for untrusted uploads: the PDF is parsed in a killable subprocess."""
+    pages, encrypted, limit_reached = read_pdf_pages_isolated(content)
+    ex = fields_from_pages(pages, encrypted)
+    if limit_reached:
+        ex.warnings.append(f"PAGE_LIMIT: only the first {MAX_PAGES} pages were read")
+    return ex
+
+
+def fields_from_pages(pages: list[str], encrypted: bool) -> Extraction:
     ex = Extraction(page_count=len(pages))
     if encrypted:
         ex.warnings.append("ENCRYPTED_PDF: text cannot be extracted; enter values from the visible PDF")

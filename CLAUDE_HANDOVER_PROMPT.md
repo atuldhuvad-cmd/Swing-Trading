@@ -274,6 +274,15 @@ Security behavior already implemented:
 - `backend\app\services\broker_pdf_intake_service.py` and `POST /api/broker-uploads/preview` are strictly read-only (no file, manifest or database write). Actions: `NEW`, `NEW_REVISION`, `ATTACH_SOURCE`, `EXACT_DUPLICATE`, `CONFLICT_REVIEW_REQUIRED`, `UNKNOWN_STOCK`, `UNKNOWN_BROKER`, `REVIEW_REQUIRED`; `duplicate_file` is reported separately. The canonical source is `BROKER_RESEARCH` with the broker as publication; `VERIFIED_PRIMARY` is only proposed until the visible PDF is checked.
 - There is no confirm/import step for PDFs yet. A later import must be separately authorised.
 
+### Broker PDF hardening (cloud commit, not yet Windows-validated)
+
+- `ATTACH_SOURCE`/`EXACT_DUPLICATE` require a complete match: report CMP and target `KNOWN` and equal; optional entry/stop/horizon equal when both sides state them. Ambiguous optional fields, `MISSING_MANDATORY_FIELD` and `UNSTATED_STORED_FIELD` give `REVIEW_REQUIRED`.
+- `source_reference` gains nullable `document_sha256` and `local_upload_id` (migration `f2a7c9d41b3e`, plain `ADD COLUMN` + index; existing rows stay NULL, no hashes inferred). `EXACT_DUPLICATE` needs a source linked to that recommendation with the exact SHA; a PDF already linked to another recommendation gives `REVIEW_REQUIRED` (`DOCUMENT_ALREADY_LINKED`).
+- **The new code queries these columns, so production must be migrated before the new backend starts**: back up (SQLite backup API), `alembic upgrade head`, then verify counts, integrity and FK checks. Not yet done on Windows.
+- Manifest writes are locked (in-process + `msvcrt`/`fcntl` file lock `.manifest.lock`) and atomically replaced; a failed index write removes the new PDF.
+- Previews parse the PDF in a killable subprocess (`pdf_text_worker.py`; 30 s timeout, 60 pages, 1,000,000 text characters, 2 concurrent parses) off the event loop.
+- CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`, without credentials; write requests (POST/PUT/PATCH) carrying any other `Origin` get 403. If Vite runs on another port (for example for Playwright), set `CORS_ALLOWED_ORIGINS` (JSON list) for the backend.
+
 ## Core application invariants
 
 Do not change these merely to produce more candidates:

@@ -104,7 +104,8 @@ def test_corrupt_index_is_preserved(monkeypatch, tmp_path):
         svc.save_upload(broker_name="Broker", original_filename="report.pdf",
                         content=_pdf_bytes(), content_type="application/pdf")
     assert svc.MANIFEST_PATH.read_text() == "broken-json"
-    assert list(directory.iterdir()) == [svc.MANIFEST_PATH]
+    # No report was stored; only the (empty) writer lock file may exist beside the manifest.
+    assert sorted(p.name for p in directory.iterdir()) == [".manifest.lock", "manifest.json"]
 
 
 def test_download_cannot_escape_upload_directory(monkeypatch, tmp_path):

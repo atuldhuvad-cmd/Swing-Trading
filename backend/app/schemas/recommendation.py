@@ -21,9 +21,11 @@ class SourceReferenceOut(SourceReferenceBase):
     verified_by: Optional[str]
     verified_at: Optional[datetime]
     import_batch_id: Optional[int]
+    document_sha256: Optional[str] = None
+    local_upload_id: Optional[str] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 

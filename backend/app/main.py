@@ -7,14 +7,33 @@ from .routers import stocks, brokers, recommendations, reference, imports, revie
 
 app = FastAPI(title="Swing Trading Platform API")
 
-# Setup CORS for frontend dev
+# CORS: only the local Vite dev server may call the API from a browser; no
+# cookies or credentials are used. The frontend normally reaches the API through
+# the same-origin Vite /api proxy, which is unaffected.
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from .config import settings
+
+ALLOWED_ORIGINS = frozenset(settings.cors_allowed_origins)
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+@app.middleware("http")
+async def reject_cross_site_writes(request, call_next):
+    # CORS only hides responses; a cross-site form POST would still run. Refuse
+    # state-changing requests that a browser marks as coming from another site.
+    origin = request.headers.get("origin")
+    if origin is not None and request.method not in _SAFE_METHODS and origin not in ALLOWED_ORIGINS:
+        return JSONResponse(status_code=403, content={"detail": "Origin not allowed"})
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=sorted(ALLOWED_ORIGINS),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(stocks.router)
