@@ -21,6 +21,8 @@ def engine(tmp_path_factory):
     event.listen(Engine, "connect", _attach_sqlite_pragma)
     
     Base.metadata.create_all(bind=engine)
+    from tests.schema_helpers import stamp_head
+    stamp_head(engine)
     yield engine
     Base.metadata.drop_all(bind=engine)
 

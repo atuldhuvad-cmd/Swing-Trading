@@ -100,6 +100,7 @@ from app.models import (  # noqa: E402
 )
 from app.schemas.recommendation import BrokerRecommendationCreate, SourceReferenceCreate  # noqa: E402
 from app.services.recommendation_service import RecommendationService  # noqa: E402
+from app import schema_readiness  # noqa: E402
 
 ICICI_URL = "https://www.icicidirect.com/research/equity/investing-ideas"
 PROD_DB = ROOT / "data" / "swing_trading.db"
@@ -414,6 +415,12 @@ def run_import(args, actionable: list[dict], page_rows: int, target_db: Path, is
     if page_rows < MIN_PAGE_ROWS:
         summary["refused"] = f"page returned only {page_rows} rows (< {MIN_PAGE_ROWS}); parser or page may be broken"
         print(f"IMPORT REFUSED: {summary['refused']}")
+        return summary, 3
+
+    refusal = schema_readiness.write_refusal(SessionLocal)  # read-only check, before planning, backup or write
+    if refusal:
+        summary["refused"] = refusal
+        print(f"IMPORT {refusal}")
         return summary, 3
 
     db = SessionLocal()

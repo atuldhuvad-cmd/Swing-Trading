@@ -148,16 +148,20 @@ class SourceReference(Base):
         CheckConstraint(verification_status.in_(['VERIFIED_PRIMARY', 'VERIFIED_SECONDARY', 'PROVISIONAL', 'REJECTED']), name='check_verification_status'),
     )
 
+    # The database enforces the same formats with triggers (migration b5e8c2d17a40),
+    # so bulk updates and direct SQL cannot store malformed values either.
     @validates('document_sha256')
     def _validate_document_sha256(self, key, value):
-        if value is not None and not re.fullmatch(r'[0-9a-f]{64}', value):
-            raise ValueError('document_sha256 must be 64 lowercase hex characters')
-        return value
+        if value is None:
+            return None
+        if not isinstance(value, str) or not re.fullmatch(r'[0-9a-fA-F]{64}', value):
+            raise ValueError('document_sha256 must be 64 hexadecimal characters')
+        return value.lower()
 
     @validates('local_upload_id')
     def _validate_local_upload_id(self, key, value):
         # An upload id, never a filesystem path.
-        if value is not None and not re.fullmatch(r'\d{8}_\d{6}_[0-9a-f]{8}', value):
+        if value is not None and (not isinstance(value, str) or not re.fullmatch(r'[0-9]{8}_[0-9]{6}_[0-9a-f]{8}', value)):
             raise ValueError('local_upload_id must be an upload id such as 20260903_203319_1efbd821')
         return value
 

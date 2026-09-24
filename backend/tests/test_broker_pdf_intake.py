@@ -463,3 +463,87 @@ def test_preview_endpoint_persists_nothing(client, intake_env):
     assert resp.status_code == 200 and resp.json()["action"] == "NEW" and resp.json()["persisted"] is False
     assert [intake_env.query(t).count() for t in tables] == counts
     assert not uploads.UPLOAD_DIR.exists()  # no file, no manifest
+
+
+# ---------------------------------------------------------------- same-day ambiguity
+
+def test_single_same_day_match_is_selected(intake_env):
+    rec = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    r = preview(intake_env, icici())
+    assert r["action"] == "ATTACH_SOURCE" and r["existing_match"]["recommendation_id"] == rec.recommendation_id
+    assert r["candidate_recommendation_ids"] == []
+
+
+def test_multiple_same_day_matches_are_never_picked_silently(intake_env):
+    a = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    b = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, status="SUPERSEDED")
+    r = preview(intake_env, icici())
+    assert r["action"] == "REVIEW_REQUIRED" and r["existing_match"] is None
+    ids = sorted([a.recommendation_id, b.recommendation_id])
+    assert r["candidate_recommendation_ids"] == ids
+    assert f"MULTIPLE_SAME_DAY_MATCHES: recommendations {ids[0]}, {ids[1]}" in r["warnings"]
+
+
+def test_same_day_different_rating_does_not_block_the_single_rating_match(intake_env):
+    intake_env.add(RatingNormalization(original_rating="Sell", normalized_rating="SELL"))
+    intake_env.commit()
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=500, rating="SELL")
+    buy = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    r = preview(intake_env, icici())
+    assert r["action"] == "ATTACH_SOURCE" and r["existing_match"]["recommendation_id"] == buy.recommendation_id
+
+
+def test_same_day_only_different_rating_is_a_conflict(intake_env):
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, rating="SELL")
+    r = preview(intake_env, icici())
+    assert r["action"] == "CONFLICT_REVIEW_REQUIRED"
+    assert r["differences"] == [{"field": "normalized_rating", "report": "BUY", "stored": "SELL"}]
+
+
+# ---------------------------------------------------------------- PDF linked to several recommendations
+
+def _sha(content):
+    return hashlib.sha256(content).hexdigest()
+
+
+def test_pdf_linked_only_to_the_selected_recommendation_is_exact_duplicate(intake_env):
+    content = icici()
+    rec = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, sha=_sha(content))
+    r = preview(intake_env, content)
+    assert r["action"] == "EXACT_DUPLICATE" and r["document_linked_recommendation_ids"] == [rec.recommendation_id]
+    assert not any(w.startswith("DOCUMENT_ALREADY_LINKED") for w in r["warnings"])
+
+
+def test_pdf_linked_to_selected_and_another_recommendation_needs_review(intake_env):
+    content = icici()
+    other = add_rec(intake_env, "ADANIENT", "Motilal Oswal", "2026-08-01", cmp=3000, tp=3500, sha=_sha(content))
+    rec = add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920, sha=_sha(content))
+    r = preview(intake_env, content)
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert r["document_linked_recommendation_ids"] == sorted([other.recommendation_id, rec.recommendation_id])
+    assert f"DOCUMENT_ALREADY_LINKED: this exact PDF is already evidence for recommendation(s) {other.recommendation_id}" in r["warnings"]
+
+
+def test_linked_elsewhere_warning_is_kept_alongside_an_economic_conflict(intake_env):
+    content = icici()
+    others = [add_rec(intake_env, "ADANIENT", "Motilal Oswal", day, cmp=3000, tp=3500, sha=_sha(content))
+              for day in ("2026-08-01", "2026-07-01")]
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=999)  # target differs
+    r = preview(intake_env, content)
+    assert r["action"] == "CONFLICT_REVIEW_REQUIRED"
+    ids = sorted(o.recommendation_id for o in others)
+    assert r["document_linked_recommendation_ids"] == ids
+    assert f"DOCUMENT_ALREADY_LINKED: this exact PDF is already evidence for recommendation(s) {ids[0]}, {ids[1]}" in r["warnings"]
+
+
+def test_linked_elsewhere_with_multiple_same_day_matches_still_warns(intake_env):
+    content = icici()
+    other = add_rec(intake_env, "ADANIENT", "Motilal Oswal", "2026-08-01", cmp=3000, tp=3500, sha=_sha(content))
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    add_rec(intake_env, "HDFCBANK", "ICICI Securities", "2026-08-31", cmp=720, tp=920)
+    before = intake_env.query(RecommendationSource).count(), intake_env.query(SourceReference).count()
+    r = preview(intake_env, content)
+    assert r["action"] == "REVIEW_REQUIRED"
+    assert any(w.startswith("MULTIPLE_SAME_DAY_MATCHES") for w in r["warnings"])
+    assert any(w.startswith("DOCUMENT_ALREADY_LINKED") and str(other.recommendation_id) in w for w in r["warnings"])
+    assert (intake_env.query(RecommendationSource).count(), intake_env.query(SourceReference).count()) == before

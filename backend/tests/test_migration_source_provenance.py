@@ -55,7 +55,8 @@ def test_upgrade_adds_nullable_provenance_columns_and_index(upgraded):
     info = {r[1]: r for r in conn.execute("PRAGMA table_info(source_reference)")}
     assert info["document_sha256"][3] == 0 and info["local_upload_id"][3] == 0  # nullable
     assert "ix_source_reference_document_sha256" in {r[1] for r in conn.execute("PRAGMA index_list(source_reference)")}
-    assert conn.execute("SELECT version_num FROM alembic_version").fetchone()[0] == REVISION
+    from app.schema_readiness import expected_head
+    assert conn.execute("SELECT version_num FROM alembic_version").fetchone()[0] == expected_head()
 
 
 def test_upgrade_preserves_existing_rows_without_inferring_hashes(upgraded):
@@ -85,7 +86,8 @@ def test_model_validates_provenance_format():
 
     ok = SourceReference(document_sha256="a" * 64, local_upload_id="20260903_203319_1efbd821")
     assert ok.document_sha256 == "a" * 64
-    for bad in ("A" * 64, "a" * 63, "g" * 64, "../" + "a" * 61):
+    assert SourceReference(document_sha256="AB" * 32).document_sha256 == "ab" * 32  # normalised to lowercase
+    for bad in ("a" * 63, "g" * 64, "../" + "a" * 61, " " + "a" * 63, "a" * 64 + "\n"):
         with pytest.raises(ValueError):
             SourceReference(document_sha256=bad)
     for bad in ("uploads/icici/report.pdf", "C:\\\\reports\\\\x.pdf", "20260903_203319_1EFBD821"):

@@ -274,14 +274,37 @@ Security behavior already implemented:
 - `backend\app\services\broker_pdf_intake_service.py` and `POST /api/broker-uploads/preview` are strictly read-only (no file, manifest or database write). Actions: `NEW`, `NEW_REVISION`, `ATTACH_SOURCE`, `EXACT_DUPLICATE`, `CONFLICT_REVIEW_REQUIRED`, `UNKNOWN_STOCK`, `UNKNOWN_BROKER`, `REVIEW_REQUIRED`; `duplicate_file` is reported separately. The canonical source is `BROKER_RESEARCH` with the broker as publication; `VERIFIED_PRIMARY` is only proposed until the visible PDF is checked.
 - There is no confirm/import step for PDFs yet. A later import must be separately authorised.
 
-### Broker PDF hardening (cloud commit, not yet Windows-validated)
+### Broker PDF hardening (cloud commits, not yet Windows-validated)
 
-- `ATTACH_SOURCE`/`EXACT_DUPLICATE` require a complete match: report CMP and target `KNOWN` and equal; optional entry/stop/horizon equal when both sides state them. Ambiguous optional fields, `MISSING_MANDATORY_FIELD` and `UNSTATED_STORED_FIELD` give `REVIEW_REQUIRED`.
-- `source_reference` gains nullable `document_sha256` and `local_upload_id` (migration `f2a7c9d41b3e`, plain `ADD COLUMN` + index; existing rows stay NULL, no hashes inferred). `EXACT_DUPLICATE` needs a source linked to that recommendation with the exact SHA; a PDF already linked to another recommendation gives `REVIEW_REQUIRED` (`DOCUMENT_ALREADY_LINKED`).
-- **The new code queries these columns, so production must be migrated before the new backend starts**: back up (SQLite backup API), `alembic upgrade head`, then verify counts, integrity and FK checks. Not yet done on Windows.
-- Manifest writes are locked (in-process + `msvcrt`/`fcntl` file lock `.manifest.lock`) and atomically replaced; a failed index write removes the new PDF.
-- Previews parse the PDF in a killable subprocess (`pdf_text_worker.py`; 30 s timeout, 60 pages, 1,000,000 text characters, 2 concurrent parses) off the event loop.
-- CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`, without credentials; write requests (POST/PUT/PATCH) carrying any other `Origin` get 403. If Vite runs on another port (for example for Playwright), set `CORS_ALLOWED_ORIGINS` (JSON list) for the backend.
+Cloud branch `claude/affectionate-archimedes-lnqdsy`. Nothing below has been run on Windows or against production.
+
+- **Matching:** `ATTACH_SOURCE`/`EXACT_DUPLICATE` require a complete match (report CMP and target `KNOWN` and equal; optional entry/stop/horizon equal when both state them). Ambiguous fields, `MISSING_MANDATORY_FIELD`, `UNSTATED_STORED_FIELD` and `MULTIPLE_SAME_DAY_MATCHES` (candidate ids listed) give `REVIEW_REQUIRED`.
+- **PDF provenance:** `source_reference.document_sha256` / `local_upload_id` (nullable, never inferred). `EXACT_DUPLICATE` only when the exact SHA is linked to the selected recommendation alone; a SHA linked to any other recommendation gives `REVIEW_REQUIRED` (a conflict stays a conflict) with `DOCUMENT_ALREADY_LINKED`.
+- **Manifest:** thread + cross-process (`msvcrt`/`fcntl`) lock, atomic replace; a failed index write removes only the new PDF.
+- **PDF parsing:** killable subprocess started from the base interpreter (`sys._base_executable`, `-I -S`, pypdf folder passed explicitly), off the event loop; 30 s timeout, 60 pages, 1,000,000 characters, 2 concurrent parses, 512 MiB per worker. Windows: each worker runs in a Job Object (`JOB_OBJECT_LIMIT_PROCESS_MEMORY` + `KILL_ON_JOB_CLOSE`); POSIX: `RLIMIT_AS`. Errors: `PDF_PARSE_TIMEOUT`, `PDF_TOO_COMPLEX` (memory/text), `PDF_PARSER_BUSY` (503), `File could not be read as a PDF`, `PDF_PARSER_FAILED` (500).
+- **CORS:** only `http://127.0.0.1:5173` and `http://localhost:5173`, no credentials; cross-site POST/PUT/PATCH/DELETE get 403. `CORS_ALLOWED_ORIGINS` (JSON list) must contain exact `scheme://host[:port]` origins; `*`, `null`, paths and wildcards stop the backend at startup.
+- **Schema readiness:** API routes return 503 `SCHEMA_NOT_CURRENT` and `/health` returns 503 `schema_not_current` until `alembic_version` equals the repository head. Nothing migrates automatically. `scratch/auto_download_ohlcv.py` and `scratch/auto_download_broker_recs_icici.py` refuse (exit 3) before any backup or write on a non-current schema.
+
+#### Required Windows migration (before starting the new backend or letting a scheduled task run)
+
+Alembic chain: `a1b2c3d4e5f6` (current production) -> `f2a7c9d41b3e` (provenance columns + index) -> `b5e8c2d17a40` (provenance format triggers) -> `c9d3f6a2e815` (broker flags: NULL -> 1, default/not-null triggers). Head: `c9d3f6a2e815`.
+
+1. Stop the backend. Scheduled tasks run at 19:00 and 20:00 on weekdays; after pulling, they refuse to write (exit 3) until the migration is done, which is safe.
+2. Reconfirm the baseline (SHA-256, counts, `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, `SELECT version_num FROM alembic_version` = `a1b2c3d4e5f6`).
+3. Record `SELECT broker_id, active_status, enabled_for_new_ingestion FROM broker_master` and any `source_reference` rows.
+4. Create a timestamped backup with the SQLite backup API and verify it.
+5. Rehearse on a disposable copy: `DATABASE_URL=sqlite:///<copy> .\venv\Scripts\python.exe -m alembic upgrade head`; verify the checks below on the copy.
+6. Run `.\venv\Scripts\python.exe -m alembic upgrade head` on production.
+7. Verify: every table count unchanged; `source_reference` and `recommendation_source` rows identical, new columns NULL; broker ids/names/aliases/relationships identical, only NULL flags changed to 1 (explicit 0 kept); 4 new triggers exist; integrity `ok`; 0 FK violations; `alembic_version` = `c9d3f6a2e815`; `GET /health` returns 200 with `schema.state = CURRENT`.
+
+Downgrade removes only triggers/columns; backfilled broker flags stay 1 (which rows were NULL is not recorded).
+
+#### Required Windows verification (REQUIRED before release)
+
+- Full backend suite, frontend tests/lint/build and the full Playwright gate on Windows.
+- `tests/test_pdf_worker_containment.py` and `tests/test_broker_pdf_isolation.py` on Windows: they start the real worker from the Windows venv's base interpreter. Then a manual check: preview a synthetic memory-heavy PDF (`tests/pdf_factory.make_slow_pdf(ops_per_page=5_000_000)`) and confirm `PDF_TOO_COMPLEX` or `PDF_PARSE_TIMEOUT`, peak worker memory near 512 MiB, and no `python.exe` worker left afterwards (Task Manager).
+- Manifest locking under Windows (`msvcrt`): `tests/test_broker_upload_manifest_safety.py`.
+- The two scheduled tasks after migration: one run each, exit 0, no schema refusal in the logs.
 
 ## Core application invariants
 

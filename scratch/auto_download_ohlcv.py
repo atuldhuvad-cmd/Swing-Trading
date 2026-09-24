@@ -94,6 +94,7 @@ from app.config import settings  # noqa: E402
 from app.models import StockMaster, DailyOhlcv  # noqa: E402
 from app.schemas.ohlcv import OhlcvConfirmRequest  # noqa: E402
 from app.services.ohlcv_service import OhlcvService  # noqa: E402
+from app import schema_readiness  # noqa: E402
 
 NSE_HOME = "https://www.nseindia.com/"
 NSE_REPORT_PAGE = "https://www.nseindia.com/report-detail/eq_security"
@@ -425,6 +426,12 @@ def main() -> int:
     if not args.dry_run and is_production and args.no_backup:
         print("REFUSED: --no-backup is not permitted for production imports.")
         return 3
+
+    if (do_symbols or do_bhavcopy) and not args.dry_run:
+        refusal = schema_readiness.write_refusal(SessionLocal)  # read-only check, before any backup or write
+        if refusal:
+            print(refusal)
+            return 3
 
     backup_path = None
     if (do_symbols or do_bhavcopy) and not args.dry_run and not args.no_backup:

@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -37,6 +39,8 @@ MAX_PAGES = 60
 MAX_TEXT_CHARS = 1_000_000        # extracted text across all read pages
 PARSE_TIMEOUT_SECONDS = 30.0      # the isolated parser is killed after this
 MAX_CONCURRENT_PARSES = 2         # at most this many parser processes at once
+WORKER_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024  # per parser process (Windows Job Object / POSIX RLIMIT_AS)
+_IS_WINDOWS = os.name == "nt"
 _WORKER_PATH = Path(__file__).with_name("pdf_text_worker.py")
 _PARSE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_PARSES)
 
@@ -74,18 +78,34 @@ _NUM = r"([\d,]+(?:\.\d+)?)"
 _CORE_RATINGS = ("STRONG BUY", "BUY", "ACCUMULATE", "ADD", "HOLD", "NEUTRAL", "REDUCE", "SELL")
 
 
-class PdfExtractionError(Exception):
-    """The file cannot be read as a PDF at all, or exceeds a parsing limit.
-
-    Messages are fixed, client-safe text: no stack trace, no local path.
-    """
-
+# Error categories for the isolated parser (fixed, client-safe messages).
+TIMEOUT, RESOURCE_LIMIT, BUSY, UNREADABLE_PDF, PARSER_FAILED = (
+    "TIMEOUT", "RESOURCE_LIMIT", "BUSY", "UNREADABLE", "PARSER_FAILED")
 
 UNREADABLE_MESSAGE = "File could not be read as a PDF"
 TIMEOUT_MESSAGE = "PDF_PARSE_TIMEOUT: the PDF took too long to read and was rejected"
-TEXT_LIMIT_MESSAGE = "PDF_TOO_COMPLEX: the PDF exceeds the text or memory limit and was rejected"
-PARSER_UNAVAILABLE_MESSAGE = "PDF_PARSER_UNAVAILABLE: the PDF reader could not be started"
+RESOURCE_LIMIT_MESSAGE = "PDF_TOO_COMPLEX: the PDF exceeds the memory or text limit and was rejected"
 BUSY_MESSAGE = "PDF_PARSER_BUSY: other PDFs are being read; try again shortly"
+PARSER_FAILED_MESSAGE = "PDF_PARSER_FAILED: the PDF reader could not run; nothing was read"
+
+_MESSAGES = {TIMEOUT: TIMEOUT_MESSAGE, RESOURCE_LIMIT: RESOURCE_LIMIT_MESSAGE, BUSY: BUSY_MESSAGE,
+             UNREADABLE_PDF: UNREADABLE_MESSAGE, PARSER_FAILED: PARSER_FAILED_MESSAGE}
+
+
+class PdfExtractionError(Exception):
+    """The file cannot be read as a PDF, exceeds a limit, or the reader failed.
+
+    ``category`` is one of TIMEOUT, RESOURCE_LIMIT, BUSY, UNREADABLE, PARSER_FAILED.
+    Messages are fixed, client-safe text: no stack trace, no local path.
+    """
+
+    def __init__(self, message: str, category: str = UNREADABLE_PDF):
+        super().__init__(message)
+        self.category = category
+
+    @classmethod
+    def of(cls, category: str) -> "PdfExtractionError":
+        return cls(_MESSAGES[category], category)
 
 
 @dataclass
@@ -365,44 +385,112 @@ def _company(p1: str, p2: str) -> Field:
 
 # ---------------------------------------------------------------- entry point
 
+def _worker_command() -> list[str]:
+    """Interpreter command for the worker.
+
+    The base interpreter is started directly, not a virtual-environment launcher:
+    on Windows the venv python.exe is a launcher that starts the real interpreter
+    as a child, which could escape the Job Object. pypdf's install folder is
+    passed explicitly so the worker imports it from the project venv. -I ignores
+    environment variables and the user site; -S keeps the base installation's own
+    site-packages out, so only the standard library and the venv's packages load.
+    """
+    import pypdf
+
+    base = getattr(sys, "_base_executable", None)
+    python = base if base and Path(base).is_file() else sys.executable
+    site_dir = str(Path(pypdf.__file__).resolve().parent.parent)
+    return [python, "-I", "-S", str(_WORKER_PATH), str(MAX_PAGES), str(MAX_TEXT_CHARS),
+            str(WORKER_MEMORY_LIMIT_BYTES), site_dir]
+
+
+def _process_handle(proc: subprocess.Popen):
+    return int(proc._handle)  # Windows process handle owned by Popen
+
+
+def _create_worker_job():
+    from app.services.windows_job import WorkerJob
+    return WorkerJob(WORKER_MEMORY_LIMIT_BYTES)
+
+
+def _terminate(proc: subprocess.Popen, job) -> None:
+    """Kill the worker; on Windows the Job Object kills the whole process tree."""
+    if job is not None:
+        try:
+            job.terminate()
+        except OSError:
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+def _failure_category(result: Any, proc: subprocess.Popen, peak_memory: int | None) -> str:
+    if isinstance(result, dict):
+        return {"RESOURCE_LIMIT": RESOURCE_LIMIT, "UNREADABLE": UNREADABLE_PDF}.get(result.get("error"), PARSER_FAILED)
+    # No usable answer: the worker died. Distinguish a memory kill from a broken worker.
+    if peak_memory is not None and peak_memory >= WORKER_MEMORY_LIMIT_BYTES * 0.9:
+        return RESOURCE_LIMIT
+    if not _IS_WINDOWS and proc.returncode == -getattr(signal, "SIGKILL", 9):
+        return RESOURCE_LIMIT  # POSIX out-of-memory kill
+    return PARSER_FAILED
+
+
 def read_pdf_pages_isolated(content: bytes) -> tuple[list[str], bool, bool]:
-    """Read page text in a separate, killable process.
+    """Read page text in a separate, killable, memory-limited process.
 
     Returns (page texts, encrypted, page limit reached). Raises PdfExtractionError
-    with a client-safe message on timeout, resource limit or an unreadable file.
+    with a client-safe message and category on timeout, resource limit, busy
+    parser, unreadable file or parser failure.
     """
     if not _PARSE_SLOTS.acquire(timeout=PARSE_TIMEOUT_SECONDS):
-        raise PdfExtractionError(BUSY_MESSAGE)
+        raise PdfExtractionError.of(BUSY)
+    job = None
     try:
         try:
             proc = subprocess.Popen(
-                [sys.executable, "-I", str(_WORKER_PATH), str(MAX_PAGES), str(MAX_TEXT_CHARS)],
+                _worker_command(),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError:
-            raise PdfExtractionError(PARSER_UNAVAILABLE_MESSAGE) from None
+            raise PdfExtractionError.of(PARSER_FAILED) from None
+        peak_memory = None
         try:
-            out, _ = proc.communicate(content, timeout=PARSE_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            raise PdfExtractionError(TIMEOUT_MESSAGE) from None
+            if _IS_WINDOWS:
+                # The worker waits for the PDF on stdin, so the limit is in place
+                # before any parsing starts. No containment -> no parsing.
+                try:
+                    job = _create_worker_job()
+                    job.assign(_process_handle(proc))
+                except OSError:
+                    _terminate(proc, job)
+                    proc.communicate()
+                    raise PdfExtractionError.of(PARSER_FAILED) from None
+            try:
+                out, _ = proc.communicate(content, timeout=PARSE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                _terminate(proc, job)
+                proc.communicate()
+                raise PdfExtractionError.of(TIMEOUT) from None
+            if job is not None:
+                peak_memory = job.peak_process_memory()
         finally:
             if proc.poll() is None:  # never leave a parser behind
-                proc.kill()
+                _terminate(proc, job)
                 proc.wait()
+            if job is not None:
+                job.close()  # KILL_ON_JOB_CLOSE ends anything still in the job
     finally:
         _PARSE_SLOTS.release()
     try:
         result = json.loads(out.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         result = None
-    if not isinstance(result, dict):  # crashed or killed (for example out of memory)
-        raise PdfExtractionError(TEXT_LIMIT_MESSAGE if proc.returncode else UNREADABLE_MESSAGE)
-    if not result.get("ok"):
-        raise PdfExtractionError(TEXT_LIMIT_MESSAGE if result.get("error") == "TEXT_LIMIT" else UNREADABLE_MESSAGE)
-    return [str(p) for p in result.get("pages", [])], bool(result.get("encrypted")), bool(result.get("page_limit_reached"))
+    if isinstance(result, dict) and result.get("ok") is True and isinstance(result.get("pages"), list):
+        return [str(p) for p in result["pages"]], bool(result.get("encrypted")), bool(result.get("page_limit_reached"))
+    raise PdfExtractionError.of(_failure_category(result, proc, peak_memory))
 
 
 def extract_fields(content: bytes) -> Extraction:

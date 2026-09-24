@@ -63,7 +63,7 @@ def test_text_limit_is_a_controlled_error(monkeypatch, spawned):
     content = make_pdf([["x" * 80]])
     with pytest.raises(extraction.PdfExtractionError) as exc:
         extraction.extract_fields_isolated(content)
-    assert str(exc.value) == extraction.TEXT_LIMIT_MESSAGE
+    assert str(exc.value) == extraction.RESOURCE_LIMIT_MESSAGE and exc.value.category == extraction.RESOURCE_LIMIT
     assert spawned[0].returncode is not None
 
 
@@ -85,6 +85,7 @@ def test_crashed_worker_is_a_controlled_error(monkeypatch):
     monkeypatch.setattr(extraction, "_WORKER_PATH", extraction._WORKER_PATH.with_name("missing_worker.py"))
     with pytest.raises(extraction.PdfExtractionError) as exc:
         extraction.extract_fields_isolated(make_pdf([["text"]]))
+    assert str(exc.value) == extraction.PARSER_FAILED_MESSAGE and exc.value.category == extraction.PARSER_FAILED
     _assert_client_safe(str(exc.value))
 
 

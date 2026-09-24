@@ -70,6 +70,10 @@ async def preview_upload(
             discovery_source=discovery_source,
             discovery_url=discovery_url,
         )
+    except intake.PdfReadFailure as e:
+        # Busy -> retry later; reader failure -> server-side; the PDF itself -> 400.
+        status = {"BUSY": 503, "PARSER_FAILED": 500}.get(e.category, 400)
+        raise HTTPException(status_code=status, detail=str(e))
     except svc.BrokerUploadError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
