@@ -1,6 +1,7 @@
 """Windows Job Object for the isolated PDF parser worker.
 
 Each parser worker runs in its own Job Object with:
+  JOB_OBJECT_LIMIT_ACTIVE_PROCESS       one process only (ActiveProcessLimit = 1)
   JOB_OBJECT_LIMIT_PROCESS_MEMORY       allocations beyond the limit fail (MemoryError)
   JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE    closing the job kills every process in it,
                                         including a venv launcher's child interpreter
@@ -15,11 +16,13 @@ from __future__ import annotations
 
 import ctypes
 
+JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
 JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION = 0x00000400
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
-JOB_LIMIT_FLAGS = (JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-                   | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION)
+JOB_LIMIT_FLAGS = (JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_PROCESS_MEMORY
+                   | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION)
+ACTIVE_PROCESS_LIMIT = 1  # the worker only; it can never start another process
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
 TERMINATED_EXIT_CODE = 1
 
@@ -73,18 +76,24 @@ class WorkerJob:
     """One Job Object per parser worker. Always ``close()`` it (idempotent)."""
 
     def __init__(self, memory_limit_bytes: int, kernel32=None):
+        self.handle = None
         self._k = kernel32 if kernel32 is not None else _load_kernel32()
         self.memory_limit = int(memory_limit_bytes)
         self.handle = self._k.CreateJobObjectW(None, None)
         if not self.handle:
+            self.handle = None
             raise OSError("CreateJobObjectW failed")
-        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-        info.BasicLimitInformation.LimitFlags = JOB_LIMIT_FLAGS
-        info.ProcessMemoryLimit = self.memory_limit
-        if not self._k.SetInformationJobObject(self.handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
-                                               ctypes.byref(info), ctypes.sizeof(info)):
-            self.close()
-            raise OSError("SetInformationJobObject failed")
+        try:
+            info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = JOB_LIMIT_FLAGS
+            info.BasicLimitInformation.ActiveProcessLimit = ACTIVE_PROCESS_LIMIT
+            info.ProcessMemoryLimit = self.memory_limit
+            if not self._k.SetInformationJobObject(self.handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+                                                   ctypes.byref(info), ctypes.sizeof(info)):
+                raise OSError("SetInformationJobObject failed")
+        except BaseException:
+            self.close()  # never leak a partially configured job
+            raise
 
     def assign(self, process_handle) -> None:
         if not self._k.AssignProcessToJobObject(self.handle, process_handle):

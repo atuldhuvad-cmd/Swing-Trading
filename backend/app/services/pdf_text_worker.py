@@ -71,7 +71,9 @@ def read(content: bytes, max_pages: int, max_chars: int) -> dict:
 def main() -> int:
     max_pages, max_chars, memory_limit = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
     if len(sys.argv) > 4:
-        sys.path.insert(0, sys.argv[4])  # the project venv's packages (pypdf); -I -S load nothing else
+        # Appended after the standard library, so nothing in the venv folder can
+        # shadow a standard-library module; -I -S load no other site-packages.
+        sys.path.append(sys.argv[4])
     _limit_memory(memory_limit)
     content = sys.stdin.buffer.read()
     try:

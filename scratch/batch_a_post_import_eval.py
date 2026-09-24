@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sqlalchemy import text
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.models import (
     StockMaster, DailyOhlcv, CandidateEvaluationRun, CandidateCriterionResult,
     RiskRewardResult, FundamentalSnapshot,
@@ -68,6 +69,8 @@ def rr_would_complete(tech: dict, entry: Decimal) -> bool:
 
 
 def main():
+    guard_script_write(ROOT / "data" / "swing_trading.db")
+    guard_script_write(SessionLocal)
     conn = sqlite3.connect(r"D:\Swing Trading\data\swing_trading.db")
     n = conn.execute("SELECT COUNT(*) FROM daily_ohlcv").fetchone()[0]
     syn = conn.execute(

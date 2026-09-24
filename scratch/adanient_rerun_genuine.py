@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(r"D:\Swing Trading")
 sys.path.insert(0, str(ROOT / "backend"))
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.models import StockMaster, DailyOhlcv, CandidateEvaluationRun
 from app.services.corporate_action_service import CorporateActionService
 from app.services.technical_service import TechnicalService
@@ -27,6 +28,7 @@ CONFIG = {
     ],
 }
 
+guard_script_write(SessionLocal)
 db = SessionLocal()
 try:
     stock = db.query(StockMaster).filter_by(nse_symbol="ADANIENT").one()

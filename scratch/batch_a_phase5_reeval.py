@@ -21,6 +21,7 @@ DB = ROOT / "data" / "swing_trading.db"
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.models import (
     StockMaster,
     DailyOhlcv,
@@ -206,6 +207,8 @@ def decisive_rule(grouped: dict, classification: str) -> str:
 
 
 def main() -> None:
+    guard_script_write(DB)
+    guard_script_write(SessionLocal)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup = ROOT / "data" / f"swing_trading_backup_{stamp}.db"
     shutil.copy2(DB, backup)

@@ -4,11 +4,14 @@ Does not restore an older full database. Does not touch broker_recommendation ro
 """
 import shutil
 import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(r"D:\Swing Trading")
 PROD = ROOT / "data" / "swing_trading.db"
+sys.path.insert(0, str(ROOT / "backend"))
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 STAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 BACKUP = ROOT / "data" / f"swing_trading_backup_{STAMP}.db"
 
@@ -19,6 +22,7 @@ def counts(conn):
 
 
 def main():
+    guard_script_write(PROD)
     shutil.copy2(PROD, BACKUP)
     conn = sqlite3.connect(PROD)
     conn.execute("PRAGMA foreign_keys=ON")

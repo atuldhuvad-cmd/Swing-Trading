@@ -20,6 +20,7 @@ DB = ROOT / "data" / "swing_trading.db"
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.models import (
     CandidateCriterionResult,
     CandidateEvaluationRun,
@@ -183,6 +184,8 @@ def decisive_rule(grouped: dict, classification: str) -> str:
 
 
 def main() -> None:
+    guard_script_write(DB)
+    guard_script_write(SessionLocal)
     if ACTIVE_CANDIDATE_CONFIG is not PHASE5_TREND_SCREEN_V1:
         raise SystemExit("STOP_ACTIVE_CONFIG_IDENTITY")
     fp = CandidateService.get_config_fingerprint(ACTIVE_CANDIDATE_CONFIG)

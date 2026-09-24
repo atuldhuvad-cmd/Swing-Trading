@@ -12,6 +12,8 @@ from pathlib import Path
 
 ROOT = Path(r"D:\Swing Trading")
 DB = ROOT / "data" / "swing_trading.db"
+sys.path.insert(0, str(ROOT / "backend"))
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 BACKEND = ROOT / "backend"
 PY = BACKEND / "venv" / "Scripts" / "python.exe"
 
@@ -41,6 +43,7 @@ def snapshot() -> dict:
 
 
 def main() -> None:
+    guard_script_write(DB)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup = DB.parent / "safety_backups" / f"swing_trading_PRE_INSURANCE_MIGRATION_{stamp}.db"
     backup.parent.mkdir(parents=True, exist_ok=True)

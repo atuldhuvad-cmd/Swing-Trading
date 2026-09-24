@@ -7,6 +7,7 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.models import BrokerMaster
 
 # Define the brokers to be seeded
@@ -55,6 +56,7 @@ international_brokers = [
 ]
 
 def seed_brokers():
+    guard_script_write(SessionLocal)
     db = SessionLocal()
     try:
         all_brokers = indian_brokers + international_brokers

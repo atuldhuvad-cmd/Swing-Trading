@@ -26,6 +26,9 @@ import sqlite3
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'swing_trading.db')
 
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
+guard_script_write(DB_PATH)
+
 conn = sqlite3.connect(DB_PATH)
 conn.execute("PRAGMA foreign_keys=OFF")  # allow cascaded deletes during cleanup
 cur = conn.cursor()

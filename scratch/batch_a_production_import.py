@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sqlalchemy import text
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.schemas.ohlcv import OhlcvConfirmRequest
 from app.services.ohlcv_service import OhlcvService
 
@@ -134,6 +135,8 @@ def verify_quality(conn: sqlite3.Connection) -> dict:
 
 
 def main():
+    guard_script_write(PROD)
+    guard_script_write(SessionLocal)
     if not PROD.exists():
         raise SystemExit("PRODUCTION DB MISSING")
 

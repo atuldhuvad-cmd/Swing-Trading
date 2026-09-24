@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from app.services.ohlcv_service import OhlcvService
 from app.schemas.ohlcv import OhlcvConfirmRequest
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 
 PROD = ROOT / "data" / "swing_trading.db"
 COPY = ROOT / "data" / "swing_trading_batch_a_import_proof_copy.db"
@@ -18,6 +19,7 @@ FILE = ROOT / "manual_inputs" / "nse" / "Nifty50" / "13-08-2025-TO-13-08-2026-AD
 
 def main():
     shutil.copy2(PROD, COPY)
+    guard_script_write(COPY)  # the disposable copy's real migration state
     engine = create_engine(f"sqlite:///{COPY}")
     Session = sessionmaker(bind=engine)
     db = Session()

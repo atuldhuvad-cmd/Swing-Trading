@@ -18,6 +18,7 @@ NIFTY = ROOT / "manual_inputs" / "nse" / "Nifty50"
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.database import SessionLocal
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 from app.schemas.ohlcv import OhlcvConfirmRequest
 from app.services.ohlcv_service import OhlcvService
 from app.services.candidate_service import CandidateService
@@ -161,6 +162,8 @@ def run_import(label: str) -> dict:
 
 
 def main() -> None:
+    guard_script_write(PROD)
+    guard_script_write(SessionLocal)
     failures: list[str] = []
 
     def fail(msg: str) -> None:

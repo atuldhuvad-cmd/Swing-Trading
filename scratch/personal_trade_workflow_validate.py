@@ -21,6 +21,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{COPY.as_posix()}"
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 from app.database import SessionLocal, get_db  # noqa: E402
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 
 defects: list[str] = []
 notes: list[str] = []
@@ -63,6 +64,7 @@ def main() -> int:
 
     before_prod = record_counts(PROD)
     shutil.copy2(PROD, COPY)
+    guard_script_write(COPY)  # the disposable copy's real migration state
     before_copy = record_counts(COPY)
     trade_count_before_copy = before_copy["trade_journal"]
 

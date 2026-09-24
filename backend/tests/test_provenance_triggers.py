@@ -14,11 +14,16 @@ from app.models import SourceReference
 from tests.migration_helpers import alembic
 
 PREVIOUS = "f2a7c9d41b3e"
+NUL_SAFE_PREVIOUS = "c9d3f6a2e815"
 TRIGGERS = {"trg_source_reference_provenance_insert", "trg_source_reference_provenance_update"}
 VALID_SHA = "0123456789abcdef" * 4
 VALID_UPLOAD = "20260903_203319_1efbd821"
-BAD_SHA = ["A" * 64, "a" * 63, "a" * 65, "g" * 64, " " + "a" * 63, "a" * 63 + " ", "a" * 63 + "\n", ""]
-BAD_UPLOAD = ["uploads/icici/r.pdf", "..\\r.pdf", "C:\\reports\\r.pdf", "C:20260903_203319_1efbd8",
+NUL_SHA = ["a" * 64 + "\x00C:\\Users\\x\\r.pdf", "a" * 63 + "\x00", "\x00" + "a" * 63, "a" * 32 + "\x00" + "a" * 31]
+NUL_UPLOAD = ["20260903_203319_1efbd821\x00/../../etc/passwd", "20260903_203319_1efbd82\x00",
+              "\x0020260903_203319_1efbd82", "20260903_203319\x001efbd821x"]
+BAD_SHA = NUL_SHA + ["\u00e9" * 32, "A" * 64, "a" * 63, "a" * 65, "g" * 64, " " + "a" * 63, "a" * 63 + " ", "a" * 63 + "\n", ""]
+BAD_UPLOAD = NUL_UPLOAD + ["2026090_3203319_1efbd821", "20260903_20331_91efbd821", "2026-09-03_203319_1efbd82",
+              "20260903:203319_1efbd821", "http://x/20260903_203319", "uploads/icici/r.pdf", "..\\r.pdf", "C:\\reports\\r.pdf", "C:20260903_203319_1efbd8",
               "file:///tmp/r.pdf", "20260903_203319_1efbd82 ", "20260903_203319_1EFBD821",
               "20260903_203319_1efbd821.pdf", "20260903/203319_1efbd821", "../20260903_203319_1efbd8",
               "report.pdf", "", " 20260903_203319_1efbd82"]
@@ -110,6 +115,22 @@ def test_valid_and_null_values_are_accepted(migrated):
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
+@pytest.mark.parametrize("column,value", [("document_sha256", v) for v in NUL_SHA] + [("local_upload_id", v) for v in NUL_UPLOAD])
+def test_orm_bulk_update_with_embedded_nul_is_rejected(migrated, column, value):
+    db, _, _ = migrated
+    engine = create_engine(f"sqlite:///{db}")
+    session = sessionmaker(bind=engine)()
+    try:
+        with pytest.raises(IntegrityError):
+            session.query(SourceReference).update({column: value})
+        session.rollback()
+    finally:
+        session.close()
+        engine.dispose()
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(f"SELECT count(*) FROM source_reference WHERE instr({column}, char(0)) > 0").fetchone()[0] == 0
+
+
 def test_orm_bulk_update_cannot_bypass_the_database(migrated):
     db, _, _ = migrated
     engine = create_engine(f"sqlite:///{db}")
@@ -138,7 +159,46 @@ def test_downgrade_drops_only_the_triggers_and_upgrade_restores_them(migrated):
     alembic(db, "upgrade", "head")
     conn = sqlite3.connect(db)
     assert TRIGGERS <= _triggers(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE source_reference SET local_upload_id = ? WHERE source_reference_id = 1", (NUL_UPLOAD[0],))
     conn.close()
+
+
+def test_downgrade_of_nul_revision_restores_previous_triggers(migrated):
+    db, conn, _ = migrated
+    conn.close()
+    alembic(db, "downgrade", NUL_SAFE_PREVIOUS)
+    with sqlite3.connect(db) as c:
+        assert TRIGGERS <= _triggers(c)  # b5e8c2d17a40 triggers are back, not removed
+        with pytest.raises(sqlite3.IntegrityError):
+            c.execute("UPDATE source_reference SET document_sha256 = 'XYZ' WHERE source_reference_id = 1")
+        c.execute("UPDATE source_reference SET local_upload_id = ? WHERE source_reference_id = 1", (NUL_UPLOAD[0],))
+        c.commit()  # the old triggers accept the NUL bypass; the upgrade scan must now refuse
+    with pytest.raises(AssertionError, match="invalid provenance"):
+        alembic(db, "upgrade", "head")
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] == NUL_SAFE_PREVIOUS
+
+
+@pytest.mark.parametrize("column,value", [("local_upload_id", NUL_UPLOAD[0]), ("document_sha256", NUL_SHA[0]),
+                                          ("document_sha256", "XYZ"), ("local_upload_id", "uploads/r.pdf")])
+def test_upgrade_aborts_on_existing_invalid_provenance_without_rewriting(tmp_path, column, value):
+    db = tmp_path / "invalid.db"
+    alembic(db, "upgrade", PREVIOUS)  # f2a7c9d41b3e: columns exist, no triggers yet
+    with sqlite3.connect(db) as c:
+        c.execute(f"INSERT INTO source_reference (source_type_id, verification_status, {column}) VALUES (1, 'PROVISIONAL', ?)", (value,))
+        c.commit()
+    with pytest.raises(AssertionError) as exc:
+        alembic(db, "upgrade", "head")
+    assert "1 source_reference row(s) have invalid provenance (ids 1)" in str(exc.value)
+    with sqlite3.connect(db) as c:
+        assert c.execute(f"SELECT {column} FROM source_reference").fetchone()[0] == value  # not rewritten
+        # SQLite DDL is not transactional across revisions: earlier revisions may be applied,
+        # but the NUL-safe revision itself is not.
+        from app.schema_readiness import expected_head
+        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] in (PREVIOUS, NUL_SAFE_PREVIOUS)
+        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] != expected_head()
+        assert c.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
 def test_api_returns_upload_id_but_no_filesystem_path(migrated, monkeypatch):

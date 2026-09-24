@@ -67,5 +67,5 @@ def health_check(db: Session = Depends(get_db)):
     if not schema.ok:
         return JSONResponse(status_code=503, content={
             "status": "schema_not_current", "foreign_keys": int(result), "schema": schema.public(),
-            "action": schema_readiness.MIGRATION_INSTRUCTION})
+            "action": schema.instruction})
     return {"status": "ok", "foreign_keys": int(result), "schema": schema.public()}

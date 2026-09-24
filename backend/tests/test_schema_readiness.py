@@ -3,6 +3,7 @@
 Disposable databases only. The check must never migrate or modify a database.
 """
 import hashlib
+import os
 import importlib.util
 import logging
 import sqlite3
@@ -196,3 +197,71 @@ def test_ohlcv_refuses_before_backup_or_download_on_missing_schema(tmp_path, mon
     engine.dispose()
     assert code == 3 and "schema is MISSING" in capsys.readouterr().out
     assert _sha(path) == before
+
+
+# ---------------------------------------------------------------- multiple Alembic heads
+
+_REV = '''revision = "{rev}"
+down_revision = None
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    pass
+
+
+def downgrade():
+    pass
+'''
+
+
+@pytest.fixture
+def two_heads(tmp_path, monkeypatch):
+    scripts = tmp_path / "alembic"
+    (scripts / "versions").mkdir(parents=True)
+    for rev in ("aaaa00000001", "bbbb00000002"):
+        (scripts / "versions" / f"{rev}_synthetic.py").write_text(_REV.format(rev=rev))
+    monkeypatch.setattr(sr, "ALEMBIC_DIR", scripts)
+    sr._script_revisions.cache_clear()
+    sr.reset_cache()
+    yield
+    sr._script_revisions.cache_clear()
+    sr.reset_cache()
+
+
+def test_multiple_heads_are_unexpected_without_querying_the_database(tmp_path, two_heads):
+    path, engine = _db(tmp_path, "m.db", "0000deadbeef")
+    before = _sha(path)
+    with engine.connect() as conn:
+        status = sr.check_schema(conn)
+    assert (status.state, status.expected_revision) == (sr.UNEXPECTED, None)
+    assert sr.check_database_file(path).state == sr.UNEXPECTED
+    engine.dispose()
+    assert _sha(path) == before
+
+
+def test_multiple_heads_give_controlled_503_everywhere(tmp_path, two_heads, client_for, caplog):
+    path, engine = _db(tmp_path, "m.db", "0000deadbeef")
+    before = _sha(path)
+    client = client_for(engine)
+    for resp in (client.get("/health"), client.get("/api/stocks"), client.get("/api/broker-uploads"),
+                 client.post("/api/stocks", json={"nse_symbol": "SYNTH", "company_name": "Synthetic"})):
+        assert resp.status_code == 503
+        assert "more than one head" in resp.text
+        for leak in ("Traceback", "SELECT", "sqlite", str(tmp_path), "alembic" + os.sep):
+            assert leak not in resp.text
+    with caplog.at_level(logging.WARNING, logger="uvicorn.error"):
+        sr.log_startup_status(engine)
+    messages = [r.getMessage() for r in caplog.records if "UNEXPECTED" in r.getMessage()]
+    assert len(messages) == 1 and "more than one head" in messages[0] and "\n" not in messages[0]
+    engine.dispose()
+    assert _sha(path) == before
+
+
+def test_multiple_heads_make_script_guards_refuse(tmp_path, two_heads, capsys):
+    path, engine = _db(tmp_path, "m.db", "0000deadbeef")
+    with pytest.raises(SystemExit) as exc:
+        sr.guard_script_write(path)
+    assert exc.value.code == 3 and "more than one head" in capsys.readouterr().out
+    engine.dispose()

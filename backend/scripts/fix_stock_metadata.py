@@ -1,8 +1,12 @@
 """Fix RELIANCE and TCS stock metadata correctly."""
 import os
 import sqlite3
+import sys
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'swing_trading.db')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
+guard_script_write(DB_PATH)
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 

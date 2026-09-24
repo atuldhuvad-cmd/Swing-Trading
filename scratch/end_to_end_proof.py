@@ -3,6 +3,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../backend')))
 
 from app.database import SessionLocal, engine
+from app.schema_readiness import guard_script_write  # noqa: E402  (refuses a stale schema before any write)
 
 from app.models import StockMaster
 from app.services.technical_service import TechnicalService
@@ -10,6 +11,7 @@ from app.services.candidate_service import CandidateService
 from app.services.risk_reward_service import RiskRewardService
 
 def run_proof():
+    guard_script_write(SessionLocal)
     db = SessionLocal()
     try:
         # Get specific stock with OHLCV data

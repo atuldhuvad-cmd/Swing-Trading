@@ -385,20 +385,41 @@ def _company(p1: str, p2: str) -> Field:
 
 # ---------------------------------------------------------------- entry point
 
+def _base_interpreter() -> str | None:
+    """The base Python interpreter, or None if it cannot be trusted.
+
+    On Windows the venv python.exe is a launcher that starts the real interpreter
+    as a child process, which could escape the Job Object; the worker must be the
+    base interpreter itself.
+    """
+    base = getattr(sys, "_base_executable", None)
+    if not base or not isinstance(base, str):
+        return None
+    path = Path(base)
+    if not path.is_file():
+        return None
+    in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+    if in_venv and path.resolve() == Path(sys.executable).resolve():
+        return None  # only the venv launcher is known
+    return str(path)
+
+
 def _worker_command() -> list[str]:
     """Interpreter command for the worker.
 
-    The base interpreter is started directly, not a virtual-environment launcher:
-    on Windows the venv python.exe is a launcher that starts the real interpreter
-    as a child, which could escape the Job Object. pypdf's install folder is
-    passed explicitly so the worker imports it from the project venv. -I ignores
-    environment variables and the user site; -S keeps the base installation's own
-    site-packages out, so only the standard library and the venv's packages load.
+    The base interpreter is started directly. On Windows there is no fallback:
+    without a trustworthy base interpreter the PDF is not parsed (PARSER_FAILED).
+    pypdf's install folder is passed explicitly and appended after the standard
+    library. -I ignores environment variables and the user site; -S keeps the base
+    installation's own site-packages out.
     """
     import pypdf
 
-    base = getattr(sys, "_base_executable", None)
-    python = base if base and Path(base).is_file() else sys.executable
+    python = _base_interpreter()
+    if python is None:
+        if _IS_WINDOWS:
+            raise PdfExtractionError.of(PARSER_FAILED)
+        python = sys.executable  # POSIX venv interpreters are the real interpreter, not a launcher
     site_dir = str(Path(pypdf.__file__).resolve().parent.parent)
     return [python, "-I", "-S", str(_WORKER_PATH), str(MAX_PAGES), str(MAX_TEXT_CHARS),
             str(WORKER_MEMORY_LIMIT_BYTES), site_dir]
@@ -418,7 +439,7 @@ def _terminate(proc: subprocess.Popen, job) -> None:
     if job is not None:
         try:
             job.terminate()
-        except OSError:
+        except Exception:  # noqa: BLE001 - still kill the process directly below
             pass
     try:
         proc.kill()
@@ -464,9 +485,9 @@ def read_pdf_pages_isolated(content: bytes) -> tuple[list[str], bool, bool]:
                 try:
                     job = _create_worker_job()
                     job.assign(_process_handle(proc))
-                except OSError:
+                except Exception:  # any ordinary setup failure; KeyboardInterrupt/SystemExit propagate
                     _terminate(proc, job)
-                    proc.communicate()
+                    proc.communicate()  # no PDF bytes are ever sent to an uncontained worker
                     raise PdfExtractionError.of(PARSER_FAILED) from None
             try:
                 out, _ = proc.communicate(content, timeout=PARSE_TIMEOUT_SECONDS)

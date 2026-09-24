@@ -157,6 +157,8 @@ def require_disposable(expect: str) -> Path:
         raise SystemExit("REFUSED: application database resolves to PRODUCTION")
     if norm(resolved) != norm(expect):
         raise SystemExit(f"REFUSED: resolved database {resolved} != expected {expect}")
+    from app.schema_readiness import guard_script_write
+    guard_script_write(resolved)  # the disposable database's real migration state, before any write
     return resolved
 
 
